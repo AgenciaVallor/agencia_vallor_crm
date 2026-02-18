@@ -1,1 +1,7 @@
 project_id = "gtbtpsgjicuxdgwowudc"
+
+[functions.campaign-engine]
+verify_jwt = false
+
+[functions.zapi-webhook]
+verify_jwt = false
