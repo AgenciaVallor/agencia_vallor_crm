@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import vallorLogo from "@/assets/vallor-logo.png";
 import { Loader2, Mail, Lock, User, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -60,34 +59,34 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center dark p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
       {/* Background blobs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-[hsl(var(--hunter-blue)/0.06)] blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full bg-[hsl(var(--hunter-orange)/0.06)] blur-3xl" />
+        <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-[hsl(var(--vallor-purple)/0.08)] blur-3xl" />
+        <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full bg-[hsl(var(--vallor-purple)/0.05)] blur-3xl" />
       </div>
 
       <div className="relative w-full max-w-md">
         {/* Logo + Header */}
         <div className="flex flex-col items-center mb-8 gap-3">
-          <div className="h-16 w-16 rounded-2xl overflow-hidden border border-[hsl(var(--hunter-border))] shadow-lg">
-            <img src={vallorLogo} alt="VAllor CRM" className="h-full w-full object-cover" />
+          <div className="h-16 w-16 rounded-2xl bg-[hsl(var(--vallor-purple))] flex items-center justify-center shadow-2xl">
+            <span className="text-white text-2xl font-black tracking-tight">CV</span>
           </div>
           <div className="text-center">
-            <h1 className="text-2xl font-bold text-foreground">VAllor CRM</h1>
+            <h1 className="text-2xl font-bold text-foreground">CRM VALLOR</h1>
             <p className="text-sm text-muted-foreground">Agência de Publicidade</p>
           </div>
         </div>
 
         {/* Card */}
-        <div className="rounded-2xl border border-[hsl(var(--hunter-border))] bg-[hsl(220_26%_9%)] shadow-2xl overflow-hidden">
+        <div className="rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
           {/* Tab switcher */}
-          <div className="flex border-b border-[hsl(var(--hunter-border))]">
+          <div className="flex border-b border-border">
             <button
               onClick={() => setMode("login")}
               className={`flex-1 py-3.5 text-sm font-medium transition-colors ${
                 mode === "login"
-                  ? "text-foreground border-b-2 border-[hsl(var(--hunter-blue))] bg-[hsl(var(--hunter-blue)/0.05)]"
+                  ? "text-foreground border-b-2 border-[hsl(var(--vallor-purple))] bg-[hsl(var(--vallor-purple)/0.07)]"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -97,7 +96,7 @@ export default function AuthPage() {
               onClick={() => setMode("signup")}
               className={`flex-1 py-3.5 text-sm font-medium transition-colors ${
                 mode === "signup"
-                  ? "text-foreground border-b-2 border-[hsl(var(--hunter-orange))] bg-[hsl(var(--hunter-orange)/0.05)]"
+                  ? "text-foreground border-b-2 border-[hsl(var(--vallor-purple))] bg-[hsl(var(--vallor-purple)/0.07)]"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -117,7 +116,7 @@ export default function AuthPage() {
                     onChange={(e) => setNome(e.target.value)}
                     required
                     placeholder="Seu nome"
-                    className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-[hsl(var(--hunter-card-bg))] border border-[hsl(var(--hunter-border))] text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[hsl(var(--hunter-blue)/0.6)] transition-colors"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-input border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[hsl(var(--vallor-purple)/0.7)] transition-colors"
                   />
                 </div>
               </div>
@@ -133,7 +132,7 @@ export default function AuthPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   placeholder="seu@email.com"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-[hsl(var(--hunter-card-bg))] border border-[hsl(var(--hunter-border))] text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[hsl(var(--hunter-blue)/0.6)] transition-colors"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-input border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[hsl(var(--vallor-purple)/0.7)] transition-colors"
                 />
               </div>
             </div>
@@ -149,7 +148,7 @@ export default function AuthPage() {
                   required
                   minLength={6}
                   placeholder="Mínimo 6 caracteres"
-                  className="w-full pl-10 pr-10 py-2.5 rounded-lg bg-[hsl(var(--hunter-card-bg))] border border-[hsl(var(--hunter-border))] text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[hsl(var(--hunter-blue)/0.6)] transition-colors"
+                  className="w-full pl-10 pr-10 py-2.5 rounded-lg bg-input border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[hsl(var(--vallor-purple)/0.7)] transition-colors"
                 />
                 <button
                   type="button"
@@ -164,11 +163,7 @@ export default function AuthPage() {
             <button
               type="submit"
               disabled={submitting}
-              className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm text-white transition-all duration-200 mt-2 ${
-                mode === "login"
-                  ? "bg-[hsl(var(--hunter-blue))] hover:bg-[hsl(var(--hunter-blue-dark))]"
-                  : "bg-[hsl(var(--hunter-orange))] hover:bg-[hsl(var(--hunter-orange-glow))]"
-              } disabled:opacity-60 disabled:cursor-not-allowed`}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm text-white bg-[hsl(var(--vallor-purple))] hover:bg-[hsl(var(--vallor-purple-dark))] transition-all duration-200 mt-2 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {submitting ? (
                 <><Loader2 className="h-4 w-4 animate-spin" /> Aguarde...</>
@@ -182,9 +177,10 @@ export default function AuthPage() {
         </div>
 
         <p className="text-center text-xs text-muted-foreground mt-6">
-          © 2025 VAllor CRM · Todos os direitos reservados
+          © 2025 CRM VALLOR · Todos os direitos reservados
         </p>
       </div>
     </div>
   );
 }
+
