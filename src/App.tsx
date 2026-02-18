@@ -7,10 +7,12 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { AuthGuard } from "@/components/AuthGuard";
+import { AdminGuard } from "@/components/AdminGuard";
 import Dashboard from "./pages/Dashboard";
 import AgenteIA from "./pages/AgenteIA";
 import Campanhas from "./pages/Campanhas";
 import Perfil from "./pages/Perfil";
+import Admin from "./pages/Admin";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
@@ -38,10 +40,13 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/auth" element={<Auth />} />
+            {/* Rotas protegidas — qualquer usuário logado */}
             <Route path="/" element={<AuthGuard><Layout><Dashboard /></Layout></AuthGuard>} />
             <Route path="/agente" element={<AuthGuard><Layout><AgenteIA /></Layout></AuthGuard>} />
             <Route path="/campanhas" element={<AuthGuard><Layout><Campanhas /></Layout></AuthGuard>} />
             <Route path="/perfil" element={<AuthGuard><Layout><Perfil /></Layout></AuthGuard>} />
+            {/* Rota exclusiva do administrador */}
+            <Route path="/admin" element={<AuthGuard><AdminGuard><Layout><Admin /></Layout></AdminGuard></AuthGuard>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
@@ -52,3 +57,4 @@ const App = () => (
 );
 
 export default App;
+
