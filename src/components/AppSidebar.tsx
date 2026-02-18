@@ -1,5 +1,5 @@
 import vallorLogo from "@/assets/vallor-logo.png";
-import { LayoutDashboard, Library, Mail, Users, BarChart2, Bot, User, Megaphone, LogOut } from "lucide-react";
+import { LayoutDashboard, Library, Mail, Users, BarChart2, Bot, User, Megaphone, LogOut, ShieldCheck } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -13,7 +13,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 
-const navItems = [
+const userNavItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Biblioteca", url: "/biblioteca", icon: Library },
   { title: "Emails", url: "/emails", icon: Mail },
@@ -24,9 +24,15 @@ const navItems = [
   { title: "Perfil", url: "/perfil", icon: User },
 ];
 
+const adminNavItems = [
+  ...userNavItems,
+  { title: "Administrador", url: "/admin", icon: ShieldCheck },
+];
+
 export function AppSidebar() {
   const location = useLocation();
-  const { profile, user, signOut } = useAuth();
+  const { profile, user, signOut, isAdmin } = useAuth();
+  const navItems = isAdmin ? adminNavItems : userNavItems;
 
   const displayName = profile?.nome || user?.email?.split("@")[0] || "Usuário";
   const initial = displayName[0].toUpperCase();
