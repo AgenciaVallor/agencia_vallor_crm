@@ -1,5 +1,5 @@
 import vallorLogo from "@/assets/vallor-logo.png";
-import { LayoutDashboard, Library, Mail, Users, BarChart2, Bot, User, Megaphone, LogOut, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, Library, Users, BarChart2, Bot, User, Megaphone, LogOut, ShieldCheck } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -16,7 +16,6 @@ import {
 const userNavItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Biblioteca", url: "/biblioteca", icon: Library },
-  { title: "Emails", url: "/emails", icon: Mail },
   { title: "CRM", url: "/crm", icon: Users },
   { title: "Campanhas", url: "/campanhas", icon: Megaphone },
   { title: "Insights", url: "/insights", icon: BarChart2 },
