@@ -1,4 +1,4 @@
-import { LayoutDashboard, Library, Mail, Users, BarChart2, Bot, User } from "lucide-react";
+import { LayoutDashboard, Library, Mail, Users, BarChart2, Bot, User, Megaphone } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -16,6 +16,7 @@ const navItems = [
   { title: "Biblioteca", url: "/biblioteca", icon: Library },
   { title: "Emails", url: "/emails", icon: Mail },
   { title: "CRM", url: "/crm", icon: Users },
+  { title: "Campanhas", url: "/campanhas", icon: Megaphone },
   { title: "Insights", url: "/insights", icon: BarChart2 },
   { title: "Agente IA", url: "/agente", icon: Bot },
   { title: "Perfil", url: "/perfil", icon: User },
@@ -28,11 +29,11 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[hsl(var(--hunter-orange))] shrink-0">
-            <span className="text-white font-bold text-sm">AF</span>
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[hsl(var(--hunter-blue))] shrink-0">
+            <span className="text-white font-bold text-xs">VC</span>
           </div>
           <div className="group-data-[collapsible=icon]:hidden">
-            <p className="font-bold text-sidebar-foreground text-sm leading-tight">AF Hunter</p>
+            <p className="font-bold text-sidebar-foreground text-sm leading-tight">VAllor CRM</p>
             <p className="text-xs text-muted-foreground">Captura de Leads</p>
           </div>
         </div>

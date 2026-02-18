@@ -59,6 +59,105 @@ export type Database = {
         }
         Relationships: []
       }
+      campaign_messages: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          enviado_em: string | null
+          id: string
+          lead_id: string
+          mensagem: string
+          pausado_por_humano: boolean
+          respondido_em: string | null
+          resposta: string | null
+          status: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          enviado_em?: string | null
+          id?: string
+          lead_id: string
+          mensagem?: string
+          pausado_por_humano?: boolean
+          respondido_em?: string | null
+          resposta?: string | null
+          status?: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          enviado_em?: string | null
+          id?: string
+          lead_id?: string
+          mensagem?: string
+          pausado_por_humano?: boolean
+          respondido_em?: string | null
+          resposta?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_messages_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_messages_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaigns: {
+        Row: {
+          cidade_filtro: string
+          created_at: string
+          delay_segundos: number
+          estado_filtro: string
+          id: string
+          nicho_filtro: string
+          nome: string
+          quantidade_por_dia: number
+          status: string
+          total_enviados: number
+          total_leads: number
+          updated_at: string
+        }
+        Insert: {
+          cidade_filtro?: string
+          created_at?: string
+          delay_segundos?: number
+          estado_filtro?: string
+          id?: string
+          nicho_filtro?: string
+          nome?: string
+          quantidade_por_dia?: number
+          status?: string
+          total_enviados?: number
+          total_leads?: number
+          updated_at?: string
+        }
+        Update: {
+          cidade_filtro?: string
+          created_at?: string
+          delay_segundos?: number
+          estado_filtro?: string
+          id?: string
+          nicho_filtro?: string
+          nome?: string
+          quantidade_por_dia?: number
+          status?: string
+          total_enviados?: number
+          total_leads?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       leads: {
         Row: {
           cidade: string
