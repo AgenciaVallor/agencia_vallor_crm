@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Search, Upload, Download, Copy, Trash2, Globe, GlobeLock,
-  MessageCircle, Mail, Edit2, ExternalLink, ChevronDown, X, Building2,
-  User, MapPin, Phone, Bot, Filter, Loader2,
+  MessageCircle, Mail, ExternalLink, ChevronDown, X, Building2,
+  MapPin, Phone, Loader2, Edit2, Save,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -28,6 +28,7 @@ type Lead = {
 
 const TEMPERATURAS = ["Todos", "Fervendo", "Quente", "Morno", "Frio", "Desinteressado"];
 const STATUS_FUNIL = ["Todos", "Novo", "Contato", "Negociando", "Proposta", "Ganho", "Perdido"];
+const PAGE_SIZE = 50;
 
 function getTemperaturaStyle(t: string) {
   switch (t) {
@@ -50,8 +51,112 @@ function getStatusStyle(s: string) {
   }
 }
 
-// Modal de detalhes do lead
-function LeadModal({ lead, onClose, onDelete }: { lead: Lead; onClose: () => void; onDelete: (id: string) => void }) {
+// ─── Edit Modal ────────────────────────────────────────────────────────────────
+function EditModal({ lead, onClose, onSave }: { lead: Lead; onClose: () => void; onSave: (updated: Lead) => void }) {
+  const [form, setForm] = useState<Lead>({ ...lead });
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    const { data, error } = await supabase
+      .from("leads")
+      .update({
+        nome_empresa: form.nome_empresa,
+        nicho: form.nicho,
+        whatsapp: form.whatsapp,
+        telefone: form.telefone,
+        email: form.email,
+        site: form.site,
+        temperatura: form.temperatura,
+        status_funil: form.status_funil,
+        cidade: form.cidade,
+        estado: form.estado,
+      })
+      .eq("id", lead.id)
+      .select()
+      .single();
+    setSaving(false);
+    if (!error && data) onSave(data as Lead);
+  };
+
+  const field = (
+    label: string,
+    key: keyof Lead,
+    opts?: { type?: string; options?: string[] }
+  ) => (
+    <div className="space-y-1">
+      <label className="text-xs text-slate-400 font-medium">{label}</label>
+      {opts?.options ? (
+        <select
+          value={String(form[key] ?? "")}
+          onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+          className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm
+            focus:outline-none focus:border-purple-500/50 transition-all"
+        >
+          {opts.options.map(o => <option key={o} value={o} className="bg-[#0f172a]">{o}</option>)}
+        </select>
+      ) : (
+        <input
+          type={opts?.type ?? "text"}
+          value={String(form[key] ?? "")}
+          onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+          className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm
+            focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-slate-600"
+        />
+      )}
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="relative w-full max-w-lg rounded-2xl border border-purple-500/20 bg-[#0f172a] shadow-2xl shadow-purple-900/30 p-6 space-y-4 animate-fade-in max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors">
+          <X className="h-5 w-5" />
+        </button>
+
+        <div>
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <Edit2 className="h-4 w-4 text-purple-400" /> Editar Lead
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">Edite os dados e clique em Salvar</p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {field("Nome da Empresa", "nome_empresa")}
+          {field("Nicho", "nicho", { options: NICHOS })}
+          {field("WhatsApp", "whatsapp")}
+          {field("Telefone", "telefone")}
+          {field("Email", "email", { type: "email" })}
+          {field("Site", "site")}
+          {field("Cidade", "cidade")}
+          {field("Estado", "estado")}
+          {field("Temperatura", "temperatura", { options: ["Fervendo", "Quente", "Morno", "Frio", "Desinteressado"] })}
+          {field("Status Funil", "status_funil", { options: ["Novo", "Contato", "Negociando", "Proposta", "Ganho", "Perdido"] })}
+        </div>
+
+        <div className="flex gap-2 pt-2">
+          <button onClick={onClose}
+            className="flex-1 px-4 py-2 rounded-lg border border-white/10 text-slate-300 text-sm hover:bg-white/5 transition-colors">
+            Cancelar
+          </button>
+          <button onClick={handleSave} disabled={saving}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium transition-colors disabled:opacity-50">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {saving ? "Salvando..." : "Salvar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Detail Modal ──────────────────────────────────────────────────────────────
+function LeadModal({ lead, onClose, onDelete, onEdit }: {
+  lead: Lead; onClose: () => void; onDelete: (id: string) => void; onEdit: () => void;
+}) {
   const temp = getTemperaturaStyle(lead.temperatura);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
@@ -85,33 +190,33 @@ function LeadModal({ lead, onClose, onDelete }: { lead: Lead; onClose: () => voi
           {lead.whatsapp && (
             <a href={`https://wa.me/${lead.whatsapp.replace(/\D/g, "")}`} target="_blank" rel="noreferrer"
               className="flex items-center gap-2 text-green-400 hover:text-green-300 transition-colors">
-              <MessageCircle className="h-4 w-4 shrink-0" />
-              {lead.whatsapp}
+              <MessageCircle className="h-4 w-4 shrink-0" />{lead.whatsapp}
             </a>
           )}
           {lead.telefone && (
             <div className="flex items-center gap-2 text-slate-300">
-              <Phone className="h-4 w-4 shrink-0 text-slate-500" />
-              {lead.telefone}
+              <Phone className="h-4 w-4 shrink-0 text-slate-500" />{lead.telefone}
             </div>
           )}
           {lead.email && (
             <a href={`mailto:${lead.email}`}
               className="flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors">
-              <Mail className="h-4 w-4 shrink-0" />
-              {lead.email}
+              <Mail className="h-4 w-4 shrink-0" />{lead.email}
             </a>
           )}
           {lead.site && (
             <a href={lead.site.startsWith("http") ? lead.site : `https://${lead.site}`} target="_blank" rel="noreferrer"
               className="flex items-center gap-2 text-purple-400 hover:text-purple-300 transition-colors">
-              <Globe className="h-4 w-4 shrink-0" />
-              {lead.site}
+              <Globe className="h-4 w-4 shrink-0" />{lead.site}
             </a>
           )}
         </div>
 
         <div className="flex gap-2 pt-2">
+          <button onClick={onEdit}
+            className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 text-sm font-medium transition-colors border border-purple-500/30">
+            <Edit2 className="h-4 w-4" /> Editar
+          </button>
           {lead.whatsapp && (
             <a href={`https://wa.me/${lead.whatsapp.replace(/\D/g, "")}`} target="_blank" rel="noreferrer"
               className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-medium transition-colors">
@@ -134,8 +239,10 @@ function LeadModal({ lead, onClose, onDelete }: { lead: Lead; onClose: () => voi
   );
 }
 
-// Card individual de lead
-function LeadCard({ lead, onClick, onDelete }: { lead: Lead; onClick: () => void; onDelete: (id: string) => void }) {
+// ─── Lead Card ─────────────────────────────────────────────────────────────────
+function LeadCard({ lead, onClick, onDelete, onEdit }: {
+  lead: Lead; onClick: () => void; onDelete: (id: string) => void; onEdit: (lead: Lead) => void;
+}) {
   const temp = getTemperaturaStyle(lead.temperatura);
 
   return (
@@ -144,7 +251,6 @@ function LeadCard({ lead, onClick, onDelete }: { lead: Lead; onClick: () => void
       className="group relative rounded-xl border border-white/5 bg-white/5 backdrop-blur-sm p-4 cursor-pointer
         hover:border-purple-500/40 hover:bg-purple-500/5 transition-all duration-200 hover:shadow-lg hover:shadow-purple-900/20"
     >
-      {/* Header */}
       <div className="flex items-start justify-between gap-2 mb-3">
         <div className="min-w-0">
           <h3 className="font-semibold text-white text-sm leading-tight truncate">{lead.nome_empresa}</h3>
@@ -155,7 +261,6 @@ function LeadCard({ lead, onClick, onDelete }: { lead: Lead; onClick: () => void
         </span>
       </div>
 
-      {/* Tags */}
       <div className="flex flex-wrap gap-1.5 mb-3">
         <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/15 text-blue-300 border border-blue-500/25">
           <Building2 className="h-2.5 w-2.5 inline mr-1" />Empresa
@@ -165,7 +270,6 @@ function LeadCard({ lead, onClick, onDelete }: { lead: Lead; onClick: () => void
         </span>
       </div>
 
-      {/* Info */}
       <div className="space-y-1.5 text-xs text-slate-400">
         <div className="flex items-center gap-1.5">
           <MapPin className="h-3 w-3 text-slate-500 shrink-0" />
@@ -191,26 +295,26 @@ function LeadCard({ lead, onClick, onDelete }: { lead: Lead; onClick: () => void
         )}
       </div>
 
-      {/* Action icons (show on hover) */}
-      <div className="absolute top-2 right-2 hidden group-hover:flex items-center gap-1"
-        onClick={e => e.stopPropagation()}>
+      {/* Hover actions */}
+      <div className="absolute top-2 right-2 hidden group-hover:flex items-center gap-1" onClick={e => e.stopPropagation()}>
+        <button onClick={() => onEdit(lead)}
+          className="p-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 transition-colors" title="Editar">
+          <Edit2 className="h-3.5 w-3.5" />
+        </button>
         {lead.whatsapp && (
           <a href={`https://wa.me/${lead.whatsapp.replace(/\D/g, "")}`} target="_blank" rel="noreferrer"
-            className="p-1.5 rounded-lg bg-green-600/20 hover:bg-green-600/40 text-green-400 transition-colors"
-            title="Abrir WhatsApp">
+            className="p-1.5 rounded-lg bg-green-600/20 hover:bg-green-600/40 text-green-400 transition-colors" title="WhatsApp">
             <MessageCircle className="h-3.5 w-3.5" />
           </a>
         )}
         {lead.email && (
           <a href={`mailto:${lead.email}`}
-            className="p-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 transition-colors"
-            title="Enviar Email">
+            className="p-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 transition-colors" title="Email">
             <Mail className="h-3.5 w-3.5" />
           </a>
         )}
         <button onClick={() => onDelete(lead.id)}
-          className="p-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/40 text-red-400 transition-colors"
-          title="Excluir lead">
+          className="p-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/40 text-red-400 transition-colors" title="Excluir">
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </div>
@@ -218,10 +322,14 @@ function LeadCard({ lead, onClick, onDelete }: { lead: Lead; onClick: () => void
   );
 }
 
+// ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function BibliotecaPage() {
   const { user } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(0);
   const [search, setSearch] = useState("");
   const [filterTemp, setFilterTemp] = useState("Todos");
   const [filterStatus, setFilterStatus] = useState("Todos");
@@ -231,40 +339,80 @@ export default function BibliotecaPage() {
   const [filterSemSite, setFilterSemSite] = useState(false);
   const [filterComSite, setFilterComSite] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [nichoOpen, setNichoOpen] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  const fetchLeads = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    let query = supabase.from("leads").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
-    if (filterTemp !== "Todos") query = query.eq("temperatura", filterTemp);
-    if (filterStatus !== "Todos") query = query.eq("status_funil", filterStatus);
-    if (filterNicho) query = query.eq("nicho", filterNicho);
-    if (filterWhatsApp) query = query.not("whatsapp", "is", null);
-    if (filterEmail) query = query.not("email", "is", null);
-    if (filterSemSite) query = query.is("site", null);
-    if (filterComSite) query = query.not("site", "is", null);
-    if (search) query = query.or(`nome_empresa.ilike.%${search}%,nicho.ilike.%${search}%,cidade.ilike.%${search}%`);
-
-    const { data, error } = await query.limit(500);
-    if (!error && data) setLeads(data as Lead[]);
-    setLoading(false);
+  const buildQuery = useCallback((fromIdx: number) => {
+    if (!user) return null;
+    let q = supabase
+      .from("leads")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .range(fromIdx, fromIdx + PAGE_SIZE - 1);
+    if (filterTemp !== "Todos") q = q.eq("temperatura", filterTemp);
+    if (filterStatus !== "Todos") q = q.eq("status_funil", filterStatus);
+    if (filterNicho) q = q.eq("nicho", filterNicho);
+    if (filterWhatsApp) q = q.not("whatsapp", "is", null);
+    if (filterEmail) q = q.not("email", "is", null);
+    if (filterSemSite) q = q.is("site", null);
+    if (filterComSite) q = q.not("site", "is", null);
+    if (search) q = q.or(`nome_empresa.ilike.%${search}%,nicho.ilike.%${search}%,cidade.ilike.%${search}%`);
+    return q;
   }, [user, filterTemp, filterStatus, filterNicho, filterWhatsApp, filterEmail, filterSemSite, filterComSite, search]);
 
-  useEffect(() => { fetchLeads(); }, [fetchLeads]);
+  const loadInitial = useCallback(async () => {
+    const q = buildQuery(0);
+    if (!q) return;
+    setLoading(true);
+    setPage(0);
+    setHasMore(true);
+    const { data } = await q;
+    if (data) {
+      setLeads(data as Lead[]);
+      setHasMore(data.length === PAGE_SIZE);
+    }
+    setLoading(false);
+  }, [buildQuery]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    const nextPage = page + 1;
+    const q = buildQuery(nextPage * PAGE_SIZE);
+    if (!q) return;
+    setLoadingMore(true);
+    const { data } = await q;
+    if (data) {
+      setLeads(prev => [...prev, ...data as Lead[]]);
+      setHasMore(data.length === PAGE_SIZE);
+      setPage(nextPage);
+    }
+    setLoadingMore(false);
+  }, [loadingMore, hasMore, page, buildQuery]);
+
+  useEffect(() => { loadInitial(); }, [loadInitial]);
+
+  // Infinite scroll via IntersectionObserver
+  useEffect(() => {
+    if (observerRef.current) observerRef.current.disconnect();
+    observerRef.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMore && !loading) loadMore();
+    }, { threshold: 0.1 });
+    if (sentinelRef.current) observerRef.current.observe(sentinelRef.current);
+    return () => observerRef.current?.disconnect();
+  }, [hasMore, loading, loadMore]);
 
   const handleDelete = async (id: string) => {
     await supabase.from("leads").delete().eq("id", id);
     setLeads(prev => prev.filter(l => l.id !== id));
   };
 
-  const handleDeleteSelected = async () => {
-    if (selectedIds.size === 0) return;
-    const ids = Array.from(selectedIds);
-    await supabase.from("leads").delete().in("id", ids);
-    setLeads(prev => prev.filter(l => !selectedIds.has(l.id)));
-    setSelectedIds(new Set());
+  const handleSaveEdit = (updated: Lead) => {
+    setLeads(prev => prev.map(l => l.id === updated.id ? updated : l));
+    if (selectedLead?.id === updated.id) setSelectedLead(updated);
+    setEditingLead(null);
   };
 
   const exportCSV = () => {
@@ -307,16 +455,8 @@ export default function BibliotecaPage() {
       <header className="h-14 flex items-center gap-3 px-4 border-b border-white/5 bg-[#0f172a] shrink-0">
         <SidebarTrigger className="text-slate-400 hover:text-white" />
         <div className="h-5 w-px bg-white/10" />
-        <div>
-          <h1 className="text-sm font-semibold text-white leading-tight">Biblioteca de Leads</h1>
-        </div>
+        <h1 className="text-sm font-semibold text-white leading-tight">Biblioteca de Leads</h1>
         <div className="ml-auto flex items-center gap-2">
-          {selectedIds.size > 0 && (
-            <button onClick={handleDeleteSelected}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs font-medium border border-red-500/30 transition-colors">
-              <Trash2 className="h-3.5 w-3.5" /> Excluir {selectedIds.size}
-            </button>
-          )}
           <button onClick={removeDuplicates}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-medium border border-white/10 transition-colors">
             <Copy className="h-3.5 w-3.5" /> Duplicatas
@@ -333,14 +473,12 @@ export default function BibliotecaPage() {
 
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 md:p-6 space-y-4">
-
-          {/* Title */}
           <div>
             <h2 className="text-2xl font-bold text-white">Biblioteca de Leads Capturados</h2>
             <p className="text-sm text-slate-400 mt-1">Gerencie todos os seus leads capturados</p>
           </div>
 
-          {/* Search bar */}
+          {/* Search */}
           <div className="relative">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
             <input
@@ -358,23 +496,21 @@ export default function BibliotecaPage() {
             )}
           </div>
 
-          {/* Filters row */}
+          {/* Filters */}
           <div className="flex flex-wrap gap-2 items-center">
-            {/* Temperatura filter */}
+            {/* Temperatura */}
             <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-lg p-1">
               {TEMPERATURAS.map(t => (
                 <button key={t} onClick={() => setFilterTemp(t)}
                   className={cn("px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
-                    filterTemp === t
-                      ? "bg-purple-600 text-white"
-                      : "text-slate-400 hover:text-white"
+                    filterTemp === t ? "bg-purple-600 text-white" : "text-slate-400 hover:text-white"
                   )}>
                   {t === "Fervendo" && "🔥 "}{t === "Quente" && "♨️ "}{t === "Morno" && "🌡️ "}{t === "Frio" && "❄️ "}{t}
                 </button>
               ))}
             </div>
 
-            {/* Status funil */}
+            {/* Funil dropdown */}
             <div className="relative">
               <button onClick={() => setNichoOpen(!nichoOpen)}
                 className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors",
@@ -399,17 +535,15 @@ export default function BibliotecaPage() {
             </div>
 
             {/* Toggle filters */}
-            {[
-              { label: "WhatsApp", icon: MessageCircle, color: "green", key: "whatsapp", active: filterWhatsApp, set: setFilterWhatsApp },
-              { label: "Email", icon: Mail, color: "blue", key: "email", active: filterEmail, set: setFilterEmail },
-              { label: "Sem Site", icon: GlobeLock, color: "slate", key: "semsite", active: filterSemSite, set: setFilterSemSite },
-              { label: "Com Site", icon: Globe, color: "purple", key: "comsite", active: filterComSite, set: setFilterComSite },
-            ].map(({ label, icon: Icon, color, key, active, set }) => (
-              <button key={key} onClick={() => set(!active)}
+            {([
+              { label: "WhatsApp", icon: MessageCircle, active: filterWhatsApp, set: setFilterWhatsApp, cls: "text-green-300 border-green-500/40 bg-green-600/20" },
+              { label: "Email",    icon: Mail,          active: filterEmail,    set: setFilterEmail,    cls: "text-blue-300 border-blue-500/40 bg-blue-600/20" },
+              { label: "Sem Site", icon: GlobeLock,     active: filterSemSite,  set: setFilterSemSite,  cls: "text-slate-300 border-slate-500/40 bg-slate-600/20" },
+              { label: "Com Site", icon: Globe,         active: filterComSite,  set: setFilterComSite,  cls: "text-purple-300 border-purple-500/40 bg-purple-600/20" },
+            ] as const).map(({ label, icon: Icon, active, set, cls }) => (
+              <button key={label} onClick={() => set(!active)}
                 className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors",
-                  active
-                    ? `bg-${color}-600/20 border-${color}-500/40 text-${color}-300`
-                    : "bg-white/5 border-white/10 text-slate-300 hover:border-white/20"
+                  active ? cls : "bg-white/5 border-white/10 text-slate-300 hover:border-white/20"
                 )}>
                 <Icon className="h-3 w-3" /> {label}
               </button>
@@ -418,7 +552,7 @@ export default function BibliotecaPage() {
             {hasFilters && (
               <button onClick={clearFilters}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-500 hover:text-white transition-colors">
-                <X className="h-3 w-3" /> Limpar filtros
+                <X className="h-3 w-3" /> Limpar
               </button>
             )}
           </div>
@@ -426,11 +560,11 @@ export default function BibliotecaPage() {
           {/* Count */}
           <div className="flex items-center gap-2">
             <span className="text-2xl font-bold text-purple-400">{leads.length}</span>
-            <span className="text-slate-400 text-sm">leads encontrados</span>
-            {loading && <Loader2 className="h-4 w-4 text-slate-500 animate-spin ml-1" />}
+            <span className="text-slate-400 text-sm">leads carregados</span>
+            {(loading || loadingMore) && <Loader2 className="h-4 w-4 text-slate-500 animate-spin ml-1" />}
           </div>
 
-          {/* Grid of cards */}
+          {/* Grid */}
           {loading ? (
             <div className="flex items-center justify-center py-20">
               <div className="text-center space-y-3">
@@ -449,25 +583,46 @@ export default function BibliotecaPage() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {leads.map(lead => (
-                <LeadCard
-                  key={lead.id}
-                  lead={lead}
-                  onClick={() => setSelectedLead(lead)}
-                  onDelete={handleDelete}
-                />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {leads.map(lead => (
+                  <LeadCard
+                    key={lead.id}
+                    lead={lead}
+                    onClick={() => setSelectedLead(lead)}
+                    onDelete={handleDelete}
+                    onEdit={setEditingLead}
+                  />
+                ))}
+              </div>
+              {/* Infinite scroll sentinel */}
+              <div ref={sentinelRef} className="h-8 flex items-center justify-center">
+                {loadingMore && <Loader2 className="h-5 w-5 text-purple-400 animate-spin" />}
+                {!hasMore && leads.length > 0 && (
+                  <p className="text-xs text-slate-600">Todos os leads carregados</p>
+                )}
+              </div>
+            </>
           )}
         </div>
       </div>
 
-      {selectedLead && (
+      {/* Detail modal */}
+      {selectedLead && !editingLead && (
         <LeadModal
           lead={selectedLead}
           onClose={() => setSelectedLead(null)}
           onDelete={handleDelete}
+          onEdit={() => setEditingLead(selectedLead)}
+        />
+      )}
+
+      {/* Edit modal */}
+      {editingLead && (
+        <EditModal
+          lead={editingLead}
+          onClose={() => setEditingLead(null)}
+          onSave={handleSaveEdit}
         />
       )}
     </div>

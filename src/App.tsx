@@ -16,6 +16,8 @@ import Admin from "./pages/Admin";
 import Auth from "./pages/Auth";
 import Biblioteca from "./pages/Biblioteca";
 import CRM from "./pages/CRM";
+import Insights from "./pages/Insights";
+import Emails from "./pages/Emails";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -49,6 +51,8 @@ const App = () => (
             <Route path="/perfil" element={<AuthGuard><Layout><Perfil /></Layout></AuthGuard>} />
             <Route path="/biblioteca" element={<AuthGuard><Layout><Biblioteca /></Layout></AuthGuard>} />
             <Route path="/crm" element={<AuthGuard><Layout><CRM /></Layout></AuthGuard>} />
+            <Route path="/insights" element={<AuthGuard><Layout><Insights /></Layout></AuthGuard>} />
+            <Route path="/emails" element={<AuthGuard><Layout><Emails /></Layout></AuthGuard>} />
             {/* Rota exclusiva do administrador */}
             <Route path="/admin" element={<AuthGuard><AdminGuard><Layout><Admin /></Layout></AdminGuard></AuthGuard>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
