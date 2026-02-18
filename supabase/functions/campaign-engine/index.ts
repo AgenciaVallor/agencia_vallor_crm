@@ -14,8 +14,8 @@ serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
 
-  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-  const ZAPI_INSTANCE = Deno.env.get("ZAPI_INSTANCE");
+  const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+  const ZAPI_INSTANCE = Deno.env.get("ZAPI_INSTANCE") || Deno.env.get("ZAPI_INSTANCE_ID");
   const ZAPI_TOKEN = Deno.env.get("ZAPI_TOKEN");
 
   try {
@@ -87,32 +87,35 @@ serve(async (req) => {
         const phone = lead.whatsapp || lead.telefone;
         if (!phone) continue;
 
-        // Generate message via Lovable AI
+        // Generate message via OpenAI GPT-4
         let mensagem = `Olá! Somos especialistas em ${agente?.nicho || "nosso segmento"} e gostaríamos de conversar com ${lead.nome_empresa}.`;
 
-        if (LOVABLE_API_KEY) {
+        if (OPENAI_API_KEY) {
           try {
             const systemPrompt = agente?.system_prompt || `Você é ${agente?.nome_agente || "Hunter"}, especialista em vendas.`;
             const userPrompt = `Gere uma mensagem curta e natural de abordagem para a empresa "${lead.nome_empresa}" localizada em ${lead.cidade}/${lead.estado} sobre: ${agente?.descricao_produto || "nosso produto/serviço"}. Varie o cumprimento. Máximo 3 frases. Apenas o texto da mensagem, sem saudações genéricas.`;
 
-            const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+            const aiResp = await fetch("https://api.openai.com/v1/chat/completions", {
               method: "POST",
               headers: {
-                Authorization: `Bearer ${LOVABLE_API_KEY}`,
+                Authorization: `Bearer ${OPENAI_API_KEY}`,
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
-                model: "google/gemini-3-flash-preview",
+                model: "gpt-4o-mini",
                 messages: [
                   { role: "system", content: systemPrompt },
                   { role: "user", content: userPrompt }
                 ],
+                max_tokens: 200,
               }),
             });
 
             if (aiResp.ok) {
               const aiData = await aiResp.json();
               mensagem = aiData.choices?.[0]?.message?.content || mensagem;
+            } else {
+              console.error("OpenAI error:", await aiResp.text());
             }
           } catch (e) {
             console.error("AI error:", e);

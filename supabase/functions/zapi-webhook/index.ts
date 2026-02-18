@@ -14,8 +14,8 @@ serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
 
-  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-  const ZAPI_INSTANCE = Deno.env.get("ZAPI_INSTANCE");
+  const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+  const ZAPI_INSTANCE = Deno.env.get("ZAPI_INSTANCE") || Deno.env.get("ZAPI_INSTANCE_ID");
   const ZAPI_TOKEN = Deno.env.get("ZAPI_TOKEN");
 
   try {
@@ -98,7 +98,7 @@ serve(async (req) => {
     }
 
     // Generate AI reply
-    if (!LOVABLE_API_KEY || !ZAPI_INSTANCE || !ZAPI_TOKEN) {
+    if (!OPENAI_API_KEY || !ZAPI_INSTANCE || !ZAPI_TOKEN) {
       console.log("Missing credentials for AI reply");
       return new Response(JSON.stringify({ ok: true, action: "saved_reply_no_ai" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
@@ -125,19 +125,20 @@ serve(async (req) => {
       `Você é ${agente?.nome_agente || "Hunter"}, um especialista em vendas. Seja prestativo e focado em converter o lead.`;
 
     try {
-      const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      const aiResp = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-3-flash-preview",
+          model: "gpt-4o-mini",
           messages: [
             { role: "system", content: systemPrompt },
             ...conversationHistory,
             { role: "user", content: messageText }
           ],
+          max_tokens: 300,
         }),
       });
 
