@@ -1,6 +1,6 @@
 import vallorLogo from "@/assets/vallor-logo.png";
 import { LayoutDashboard, Library, Users, BarChart2, Bot, User, Megaphone, LogOut, ShieldCheck, Mail } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { useLocation, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Sidebar,
@@ -70,10 +70,10 @@ export function AppSidebar() {
                         : "hover:bg-sidebar-accent"
                       }
                     >
-                      <a href={item.url} className="flex items-center gap-2">
+                      <Link to={item.url} className="flex items-center gap-2">
                         <item.icon className="h-4 w-4 shrink-0" />
                         <span>{item.title}</span>
-                      </a>
+                      </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
