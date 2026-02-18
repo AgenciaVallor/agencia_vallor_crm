@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      agente_config: {
+        Row: {
+          agressividade: number
+          argumentos: string[]
+          created_at: string
+          descricao_produto: string
+          estilo: string
+          id: string
+          missao: string
+          nicho: string
+          nome_agente: string
+          objecoes: string[]
+          system_prompt: string
+          updated_at: string
+        }
+        Insert: {
+          agressividade?: number
+          argumentos?: string[]
+          created_at?: string
+          descricao_produto?: string
+          estilo?: string
+          id?: string
+          missao?: string
+          nicho?: string
+          nome_agente?: string
+          objecoes?: string[]
+          system_prompt?: string
+          updated_at?: string
+        }
+        Update: {
+          agressividade?: number
+          argumentos?: string[]
+          created_at?: string
+          descricao_produto?: string
+          estilo?: string
+          id?: string
+          missao?: string
+          nicho?: string
+          nome_agente?: string
+          objecoes?: string[]
+          system_prompt?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       leads: {
         Row: {
           cidade: string
