@@ -50,10 +50,41 @@ export default function DashboardPage() {
   const [modo, setModo] = useState("Todos os leads");
   const [capturing, setCapturing] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [stats, setStats] = useState<StatsState>({ total: 402, comWhatsApp: 284, semSite: 150, hoje: 45 });
+  const [stats, setStats] = useState<StatsState>({ total: 0, comWhatsApp: 0, semSite: 0, hoje: 0 });
+  const [loadingStats, setLoadingStats] = useState(true);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   const estadoNome = ESTADOS.find((e) => e.sigla === estadoSigla)?.nome ?? "";
+
+  // Carrega stats reais do banco filtrando pelo user_id
+  const fetchStats = useCallback(async () => {
+    if (!user?.id) return;
+    setLoadingStats(true);
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const [totalRes, whatsRes, siteRes, hojeRes] = await Promise.all([
+        supabase.from("leads").select("id", { count: "exact", head: true }).eq("user_id", user.id),
+        supabase.from("leads").select("id", { count: "exact", head: true }).eq("user_id", user.id).not("whatsapp", "is", null),
+        supabase.from("leads").select("id", { count: "exact", head: true }).eq("user_id", user.id).is("site", null),
+        supabase.from("leads").select("id", { count: "exact", head: true }).eq("user_id", user.id).gte("created_at", today.toISOString()),
+      ]);
+
+      setStats({
+        total: totalRes.count ?? 0,
+        comWhatsApp: whatsRes.count ?? 0,
+        semSite: siteRes.count ?? 0,
+        hoje: hojeRes.count ?? 0,
+      });
+    } finally {
+      setLoadingStats(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -123,12 +154,8 @@ export default function DashboardPage() {
         addLog(`❌ Erro ao salvar: ${error.message}`, "error");
       } else {
         addLog(`✅ Captura concluída! ${filtered.length} leads salvos com sucesso.`, "success");
-        setStats((prev) => ({
-          total: prev.total + filtered.length,
-          comWhatsApp: prev.comWhatsApp + filtered.filter((l) => l.whatsapp).length,
-          semSite: prev.semSite + filtered.filter((l) => !l.site).length,
-          hoje: prev.hoje + filtered.length,
-        }));
+        // Recarrega stats reais do banco
+        await fetchStats();
       }
     } catch (err) {
       addLog(`❌ Erro inesperado ao salvar leads.`, "error");
@@ -377,25 +404,25 @@ export default function DashboardPage() {
           <StatCard
             icon={<Users className="h-5 w-5" />}
             label="Total de Leads"
-            value={stats.total.toLocaleString("pt-BR")}
+            value={loadingStats ? "..." : stats.total.toLocaleString("pt-BR")}
             color="blue"
           />
           <StatCard
             icon={<MessageCircle className="h-5 w-5" />}
             label="Com WhatsApp"
-            value={stats.comWhatsApp.toLocaleString("pt-BR")}
+            value={loadingStats ? "..." : stats.comWhatsApp.toLocaleString("pt-BR")}
             color="green"
           />
           <StatCard
             icon={<Globe className="h-5 w-5" />}
             label="Sem Site"
-            value={stats.semSite.toLocaleString("pt-BR")}
+            value={loadingStats ? "..." : stats.semSite.toLocaleString("pt-BR")}
             color="orange"
           />
           <StatCard
             icon={<Calendar className="h-5 w-5" />}
             label="Capturados Hoje"
-            value={stats.hoje.toLocaleString("pt-BR")}
+            value={loadingStats ? "..." : stats.hoje.toLocaleString("pt-BR")}
             color="purple"
           />
         </div>
