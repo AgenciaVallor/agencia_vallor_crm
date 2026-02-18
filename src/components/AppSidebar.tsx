@@ -1,3 +1,4 @@
+import vallorLogo from "@/assets/vallor-logo.png";
 import { LayoutDashboard, Library, Mail, Users, BarChart2, Bot, User, Megaphone } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import {
@@ -29,12 +30,14 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[hsl(var(--hunter-blue))] shrink-0">
-            <span className="text-white font-bold text-xs">VC</span>
-          </div>
+          <img
+            src={vallorLogo}
+            alt="VAllor CRM"
+            className="h-8 w-8 rounded-lg object-cover shrink-0"
+          />
           <div className="group-data-[collapsible=icon]:hidden">
             <p className="font-bold text-sidebar-foreground text-sm leading-tight">VAllor CRM</p>
-            <p className="text-xs text-muted-foreground">Captura de Leads</p>
+            <p className="text-xs text-muted-foreground">Agência de Publicidade</p>
           </div>
         </div>
       </SidebarHeader>
