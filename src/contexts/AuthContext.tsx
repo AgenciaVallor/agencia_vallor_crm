@@ -47,9 +47,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .from("user_roles")
       .select("role")
       .eq("user_id", userId)
-      .order("role", { ascending: true }) // 'admin' < 'user' alphabetically, so admin comes first
+      .order("role", { ascending: true })
       .limit(1)
-      .single();
+      .maybeSingle();
     if (data) setRole(data.role as AppRole);
     else setRole("user");
   }
@@ -59,8 +59,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
+    let isMounted = true;
+
+    // Listener for ONGOING auth changes (does NOT control loading)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      (_event, session) => {
+        if (!isMounted) return;
+        setSession(session);
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          // Use setTimeout to avoid Supabase deadlock
+          setTimeout(() => {
+            if (!isMounted) return;
+            Promise.all([
+              fetchProfile(session.user.id),
+              fetchRole(session.user.id),
+            ]);
+          }, 0);
+        } else {
+          setProfile(null);
+          setRole(null);
+        }
+      }
+    );
+
+    // INITIAL load — controls loading state
+    const initializeAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!isMounted) return;
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
@@ -68,28 +95,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             fetchProfile(session.user.id),
             fetchRole(session.user.id),
           ]);
-        } else {
-          setProfile(null);
-          setRole(null);
         }
-        setLoading(false);
+      } finally {
+        if (isMounted) setLoading(false);
       }
-    );
+    };
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        Promise.all([
-          fetchProfile(session.user.id),
-          fetchRole(session.user.id),
-        ]).finally(() => setLoading(false));
-      } else {
-        setLoading(false);
-      }
-    });
+    initializeAuth();
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   async function signOut() {
