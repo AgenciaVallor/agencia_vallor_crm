@@ -1,4 +1,4 @@
-import vallorLogo from "@/assets/vallor-logo.png";
+
 import { LayoutDashboard, Library, Users, BarChart2, Bot, User, Megaphone, LogOut, ShieldCheck, Mail } from "lucide-react";
 import { useLocation, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -41,13 +41,11 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center">
-          <img
-            src={vallorLogo}
-            alt="VAllor CRM"
-            className="h-8 w-8 rounded-lg object-cover shrink-0"
-          />
+          <div className="h-8 w-8 rounded-lg bg-[hsl(var(--vallor-purple))] flex items-center justify-center shrink-0 shadow-lg">
+            <span className="text-white text-xs font-black tracking-tight">CV</span>
+          </div>
           <div className="group-data-[collapsible=icon]:hidden">
-            <p className="font-bold text-sidebar-foreground text-sm leading-tight">VAllor CRM</p>
+            <p className="font-bold text-foreground text-sm leading-tight">CRM VALLOR</p>
             <p className="text-xs text-muted-foreground">Agência de Publicidade</p>
           </div>
         </div>
@@ -66,8 +64,8 @@ export function AppSidebar() {
                       isActive={isActive}
                       tooltip={item.title}
                       className={isActive
-                        ? "bg-[hsl(var(--hunter-blue)/0.15)] text-[hsl(var(--hunter-blue))] border border-[hsl(var(--hunter-blue)/0.3)]"
-                        : "hover:bg-sidebar-accent"
+                        ? "bg-[hsl(var(--vallor-purple)/0.15)] text-[hsl(var(--vallor-purple-light))] border border-[hsl(var(--vallor-purple)/0.35)]"
+                        : "hover:bg-sidebar-accent text-sidebar-foreground"
                       }
                     >
                       <Link to={item.url} className="flex items-center gap-2">
@@ -85,7 +83,7 @@ export function AppSidebar() {
 
       <div className="p-3 border-t border-sidebar-border mt-auto space-y-1">
         <div className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center px-2 py-1">
-          <div className="h-7 w-7 rounded-full bg-[hsl(var(--hunter-blue))] flex items-center justify-center shrink-0">
+          <div className="h-7 w-7 rounded-full bg-[hsl(var(--vallor-purple))] flex items-center justify-center shrink-0">
             <span className="text-white text-xs font-bold">{initial}</span>
           </div>
           <div className="group-data-[collapsible=icon]:hidden min-w-0 flex-1">
