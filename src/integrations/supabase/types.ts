@@ -28,6 +28,7 @@ export type Database = {
           objecoes: string[]
           system_prompt: string
           updated_at: string
+          user_id: string | null
         }
         Insert: {
           agressividade?: number
@@ -42,6 +43,7 @@ export type Database = {
           objecoes?: string[]
           system_prompt?: string
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
           agressividade?: number
@@ -56,6 +58,7 @@ export type Database = {
           objecoes?: string[]
           system_prompt?: string
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -71,6 +74,7 @@ export type Database = {
           respondido_em: string | null
           resposta: string | null
           status: string
+          user_id: string | null
         }
         Insert: {
           campaign_id: string
@@ -83,6 +87,7 @@ export type Database = {
           respondido_em?: string | null
           resposta?: string | null
           status?: string
+          user_id?: string | null
         }
         Update: {
           campaign_id?: string
@@ -95,6 +100,7 @@ export type Database = {
           respondido_em?: string | null
           resposta?: string | null
           status?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -127,6 +133,7 @@ export type Database = {
           total_enviados: number
           total_leads: number
           updated_at: string
+          user_id: string | null
         }
         Insert: {
           cidade_filtro?: string
@@ -141,6 +148,7 @@ export type Database = {
           total_enviados?: number
           total_leads?: number
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
           cidade_filtro?: string
@@ -155,6 +163,7 @@ export type Database = {
           total_enviados?: number
           total_leads?: number
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -173,6 +182,7 @@ export type Database = {
           telefone: string | null
           temperatura: string
           updated_at: string
+          user_id: string | null
           whatsapp: string | null
         }
         Insert: {
@@ -189,6 +199,7 @@ export type Database = {
           telefone?: string | null
           temperatura?: string
           updated_at?: string
+          user_id?: string | null
           whatsapp?: string | null
         }
         Update: {
@@ -205,7 +216,80 @@ export type Database = {
           telefone?: string | null
           temperatura?: string
           updated_at?: string
+          user_id?: string | null
           whatsapp?: string | null
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          email: string
+          id: string
+          nome: string
+          plano: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string
+          id?: string
+          nome?: string
+          plano?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string
+          id?: string
+          nome?: string
+          plano?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      whatsapp_accounts: {
+        Row: {
+          connected_at: string | null
+          created_at: string
+          id: string
+          instance_id: string | null
+          numero: string | null
+          qr_code: string | null
+          status: string
+          token: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          connected_at?: string | null
+          created_at?: string
+          id?: string
+          instance_id?: string | null
+          numero?: string | null
+          qr_code?: string | null
+          status?: string
+          token?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          connected_at?: string | null
+          created_at?: string
+          id?: string
+          instance_id?: string | null
+          numero?: string | null
+          qr_code?: string | null
+          status?: string
+          token?: string | null
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }

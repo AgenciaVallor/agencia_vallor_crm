@@ -4,6 +4,7 @@ import {
   Zap, TrendingUp, CheckCircle, Loader2, Shuffle, ChevronDown,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { NICHOS } from "@/data/nichos";
 import { ESTADOS } from "@/data/estados";
 import { CIDADES_POR_ESTADO } from "@/data/cidades";
@@ -40,6 +41,7 @@ function now() {
 }
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const [nicho, setNicho] = useState("");
   const [estadoSigla, setEstadoSigla] = useState("");
   const [cidade, setCidade] = useState("");
@@ -115,7 +117,8 @@ export default function DashboardPage() {
     await sleep(600);
 
     try {
-      const { error } = await supabase.from("leads").insert(filtered);
+      const leadsWithUser = filtered.map((l) => ({ ...l, user_id: user?.id }));
+      const { error } = await supabase.from("leads").insert(leadsWithUser);
       if (error) {
         addLog(`❌ Erro ao salvar: ${error.message}`, "error");
       } else {
