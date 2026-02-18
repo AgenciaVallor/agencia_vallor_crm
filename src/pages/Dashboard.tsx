@@ -6,6 +6,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { NICHOS } from "@/data/nichos";
 import { ESTADOS } from "@/data/estados";
+import { CIDADES_POR_ESTADO } from "@/data/cidades";
 import { generateMockLeads, getTemperaturaColor, getTemperaturaIcon } from "@/utils/mockLeads";
 import { SearchableDropdown } from "@/components/SearchableDropdown";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -223,14 +224,22 @@ export default function DashboardPage() {
                 <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                   Cidade
                 </label>
-                <input
-                  type="text"
-                  value={cidade}
-                  onChange={(e) => setCidade(e.target.value)}
-                  disabled={sortear}
-                  placeholder={estadoSigla ? `Digite a cidade em ${estadoNome}...` : "Selecione o estado primeiro..."}
-                  className="w-full px-3 py-2.5 rounded-lg bg-[hsl(var(--hunter-card-bg))] border border-[hsl(var(--hunter-border))] text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[hsl(var(--hunter-blue)/0.6)] transition-colors disabled:opacity-50"
-                />
+                {estadoSigla && !sortear ? (
+                  <SearchableDropdown
+                    options={CIDADES_POR_ESTADO[estadoSigla] ?? []}
+                    value={cidade}
+                    onChange={setCidade}
+                    placeholder={`Selecione a cidade em ${estadoNome}...`}
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={sortear ? "Será sorteada automaticamente" : ""}
+                    disabled
+                    placeholder={sortear ? "Será sorteada automaticamente" : "Selecione o estado primeiro..."}
+                    className="w-full px-3 py-2.5 rounded-lg bg-[hsl(var(--hunter-card-bg))] border border-[hsl(var(--hunter-border))] text-sm text-foreground placeholder:text-muted-foreground focus:outline-none transition-colors disabled:opacity-50"
+                  />
+                )}
               </div>
 
               {/* Quantidade */}
