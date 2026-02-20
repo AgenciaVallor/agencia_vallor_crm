@@ -1,14 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Play, Square, Users, MessageCircle, Globe, Calendar,
-  Zap, TrendingUp, CheckCircle, Loader2, Shuffle, ChevronDown,
+  Play, Users, MessageCircle, Globe, Calendar,
+  Zap, TrendingUp, CheckCircle, Loader2, Shuffle, ChevronDown, AlertCircle,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { NICHOS } from "@/data/nichos";
 import { ESTADOS } from "@/data/estados";
 import { CIDADES_POR_ESTADO } from "@/data/cidades";
-import { generateMockLeads, getTemperaturaColor, getTemperaturaIcon } from "@/utils/mockLeads";
 import { SearchableDropdown } from "@/components/SearchableDropdown";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 
@@ -110,55 +109,107 @@ export default function DashboardPage() {
 
     const cidadeAlvo = sortear ? randomCidade(estadoSigla) : cidade;
 
-    addLog(`🔍 Buscando ${nicho} em ${cidadeAlvo} - ${estadoSigla}...`, "info");
-    await sleep(800);
-    addLog(`🗺️ Conectando ao Google Maps simulado...`, "info");
-    await sleep(600);
-    addLog(`📍 Escaneando região: ${cidadeAlvo}, ${estadoSigla}`, "info");
-    await sleep(700);
+    addLog(`🔍 Buscando "${nicho}" em ${cidadeAlvo} - ${estadoSigla} no Google Maps...`, "info");
+    addLog(`🗺️ Conectando à API do Google Places...`, "info");
 
-    const partialCount = Math.floor(quantidade * 0.4);
-    addLog(`📥 Extraídos ${partialCount} leads iniciais...`, "info");
-    await sleep(500);
-    addLog(`🔗 Enriquecendo dados de WhatsApp...`, "info");
-    await sleep(800);
-    addLog(`📧 Verificando emails e sites...`, "info");
-    await sleep(600);
-
-    const leads = generateMockLeads(nicho, cidadeAlvo, estadoSigla, quantidade);
-
-    // Apply mode filter
-    let filtered = [...leads];
-    if (modo === "Com WhatsApp") filtered = leads.filter((l) => l.whatsapp);
-    else if (modo === "WhatsApp + Email") filtered = leads.filter((l) => l.whatsapp && l.email);
-    else if (modo === "Prioriza sem site") filtered = [...leads].sort((a, b) => (a.site ? 1 : -1) - (b.site ? 1 : -1));
-    else if (modo === "Prioriza com site") filtered = [...leads].sort((a, b) => (b.site ? 1 : 0) - (a.site ? 1 : 0));
-    else if (modo === "Apenas com site") filtered = leads.filter((l) => l.site);
-
-    addLog(`🌡️ Classificando temperatura dos leads...`, "info");
-    await sleep(500);
-
-    const fervendo = filtered.filter((l) => l.temperatura === "Fervendo").length;
-    const quente = filtered.filter((l) => l.temperatura === "Quente").length;
-    const morno = filtered.filter((l) => l.temperatura === "Morno").length;
-
-    addLog(`🔥 Fervendo: ${fervendo} | ♨️ Quente: ${quente} | 🌡️ Morno: ${morno}`, "info");
-    await sleep(400);
-    addLog(`💾 Salvando ${filtered.length} leads no banco de dados...`, "info");
-    await sleep(600);
+    let allLeads: Record<string, unknown>[] = [];
+    let pageToken: string | null = null;
+    let pagesNeeded = Math.ceil(quantidade / 20);
+    let pageNum = 0;
 
     try {
-      const leadsWithUser = filtered.map((l) => ({ ...l, user_id: user?.id }));
-      const { error } = await supabase.from("leads").insert(leadsWithUser);
-      if (error) {
-        addLog(`❌ Erro ao salvar: ${error.message}`, "error");
+      while (pageNum < pagesNeeded) {
+        addLog(`📄 Buscando página ${pageNum + 1} de resultados...`, "info");
+
+        const { data, error } = await supabase.functions.invoke('google-maps-search', {
+          body: {
+            nicho,
+            cidade: cidadeAlvo,
+            estado: estadoSigla,
+            maxResults: Math.min(20, quantidade - allLeads.length),
+            ...(pageToken ? { pageToken } : {}),
+          },
+        });
+
+        if (error) {
+          addLog(`❌ Erro na API: ${error.message}`, "error");
+          break;
+        }
+
+        if (!data?.success) {
+          addLog(`❌ ${data?.error ?? 'Erro desconhecido na busca.'}`, "error");
+          break;
+        }
+
+        const pageleads = data.leads ?? [];
+        allLeads = [...allLeads, ...pageleads];
+        pageToken = data.nextPageToken ?? null;
+
+        addLog(`📥 Página ${pageNum + 1}: ${pageleads.length} negócios encontrados`, "info");
+
+        pageNum++;
+
+        // Se não há próxima página, para
+        if (!pageToken) break;
+
+        // Delay de 2s entre páginas (exigido pela API do Google)
+        if (pageNum < pagesNeeded) {
+          addLog(`⏳ Aguardando para buscar próxima página...`, "info");
+          await sleep(2000);
+        }
+      }
+
+      if (allLeads.length === 0) {
+        addLog(`⚠️ Nenhum resultado encontrado para "${nicho}" em ${cidadeAlvo}.`, "warn");
+        setCapturing(false);
+        return;
+      }
+
+      // Aplica filtro de modo
+      let filtered = [...allLeads];
+      if (modo === "Com WhatsApp") filtered = allLeads.filter((l: any) => l.whatsapp);
+      else if (modo === "WhatsApp + Email") filtered = allLeads.filter((l: any) => l.whatsapp && l.email);
+      else if (modo === "Prioriza sem site") filtered = [...allLeads].sort((a: any, b: any) => (a.site ? 1 : -1) - (b.site ? 1 : -1));
+      else if (modo === "Prioriza com site") filtered = [...allLeads].sort((a: any, b: any) => (b.site ? 1 : 0) - (a.site ? 1 : 0));
+      else if (modo === "Apenas com site") filtered = allLeads.filter((l: any) => l.site);
+
+      const fervendo = filtered.filter((l: any) => l.temperatura === "Fervendo").length;
+      const quente   = filtered.filter((l: any) => l.temperatura === "Quente").length;
+      const morno    = filtered.filter((l: any) => l.temperatura === "Morno").length;
+
+      addLog(`🌡️ Temperatura: 🔥 ${fervendo} Fervendo | ♨️ ${quente} Quente | 🌡️ ${morno} Morno`, "info");
+      addLog(`💾 Salvando ${filtered.length} leads no banco...`, "info");
+
+      type LeadInsert = {
+        nome_empresa: string; nicho: string; cidade: string; estado: string;
+        telefone?: string | null; whatsapp?: string | null; email?: string | null;
+        site?: string | null; fonte?: string; status_funil?: string; temperatura?: string; user_id?: string;
+      };
+      const leadsWithUser: LeadInsert[] = filtered.map((l) => ({
+        nome_empresa: (l as any).nome_empresa ?? '',
+        nicho: (l as any).nicho ?? nicho,
+        cidade: (l as any).cidade ?? cidade,
+        estado: (l as any).estado ?? estadoSigla,
+        telefone: (l as any).telefone ?? null,
+        whatsapp: (l as any).whatsapp ?? null,
+        email: (l as any).email ?? null,
+        site: (l as any).site ?? null,
+        fonte: (l as any).fonte ?? 'Google Maps',
+        status_funil: (l as any).status_funil ?? 'Novo',
+        temperatura: (l as any).temperatura ?? 'Frio',
+        user_id: user?.id,
+      }));
+      const { error: insertErr } = await supabase.from("leads").insert(leadsWithUser);
+
+      if (insertErr) {
+        addLog(`❌ Erro ao salvar: ${insertErr.message}`, "error");
       } else {
-        addLog(`✅ Captura concluída! ${filtered.length} leads salvos com sucesso.`, "success");
-        // Recarrega stats reais do banco
+        addLog(`✅ Captura concluída! ${filtered.length} leads reais do Google Maps salvos.`, "success");
         await fetchStats();
       }
     } catch (err) {
-      addLog(`❌ Erro inesperado ao salvar leads.`, "error");
+      const msg = err instanceof Error ? err.message : "Erro inesperado.";
+      addLog(`❌ ${msg}`, "error");
     }
 
     setCapturing(false);
@@ -180,6 +231,7 @@ export default function DashboardPage() {
     const lista = cidades[sigla] ?? ["Capital", "Cidade A", "Cidade B"];
     return lista[Math.floor(Math.random() * lista.length)];
   }
+
 
   function getLogColor(type: LogEntry["type"]) {
     switch (type) {
@@ -209,12 +261,26 @@ export default function DashboardPage() {
 
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5">
 
-        {/* ── CAPTURE CONFIG CARD ── */}
-        <div className="rounded-xl border border-[hsl(var(--hunter-border))] bg-[hsl(220_26%_9%)] card-glow-blue overflow-hidden">
-          <div className="flex items-center gap-2 px-5 py-3.5 border-b border-[hsl(var(--hunter-border))]">
-            <Zap className="h-4 w-4 text-[hsl(var(--hunter-orange))]" />
-            <h2 className="font-semibold text-foreground text-sm">Configurar Captura</h2>
+        {/* ── AVISO: chave API ── */}
+        <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 px-5 py-4 flex gap-3 items-start">
+          <AlertCircle className="h-5 w-5 text-yellow-400 shrink-0 mt-0.5" />
+          <div className="text-sm">
+            <p className="font-semibold text-yellow-300 mb-1">🗺️ Busca real via Google Maps — Configure sua chave API</p>
+            <p className="text-yellow-200/70 leading-relaxed">
+              Para buscar negócios reais, adicione o secret <code className="bg-yellow-500/20 px-1 rounded text-yellow-200">GOOGLE_MAPS_API_KEY</code> no painel de Secrets com uma chave do{" "}
+              <strong>Google Cloud Console</strong> com a <strong>Places API (New)</strong> habilitada.{" "}
+              Crie em: <span className="underline">console.cloud.google.com → APIs → Places API (New)</span>.
+            </p>
           </div>
+        </div>
+
+        {/* ── CAPTURE CONFIG CARD ── */}
+        <div className="rounded-xl border border-border bg-card card-glow-blue overflow-hidden">
+          <div className="flex items-center gap-2 px-5 py-3.5 border-b border-border">
+            <Zap className="h-4 w-4 text-primary" />
+            <h2 className="font-semibold text-foreground text-sm">Configurar Captura — Google Maps</h2>
+          </div>
+
 
           <div className="p-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
