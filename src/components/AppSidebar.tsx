@@ -1,5 +1,5 @@
 
-import { LayoutDashboard, Library, Users, BarChart2, Bot, User, Megaphone, LogOut, ShieldCheck, Mail } from "lucide-react";
+import { LayoutDashboard, Library, Users, BarChart2, Bot, User, Megaphone, LogOut, ShieldCheck, Mail, Calendar } from "lucide-react";
 import { useLocation, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -21,6 +21,7 @@ const userNavItems = [
   { title: "Insights", url: "/insights", icon: BarChart2 },
   { title: "Emails", url: "/emails", icon: Mail },
   { title: "Agente IA", url: "/agente", icon: Bot },
+  { title: "Agenda", url: "/agenda", icon: Calendar },
   { title: "Perfil", url: "/perfil", icon: User },
 ];
 
