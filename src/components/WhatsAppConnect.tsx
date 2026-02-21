@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Smartphone, Wifi, WifiOff, RefreshCw, X, QrCode } from "lucide-react";
+import { Smartphone, Wifi, WifiOff, RefreshCw, X, QrCode, Share2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -12,12 +12,6 @@ interface WhatsAppAccount {
   connected_at: string | null;
 }
 
-const STATUS_COLORS: Record<string, { dot: string; label: string }> = {
-  conectado: { dot: "bg-green-500", label: "Conectado" },
-  desconectado: { dot: "bg-red-500", label: "Desconectado" },
-  aguardando: { dot: "bg-yellow-500 animate-pulse", label: "Aguardando QR" },
-};
-
 export default function WhatsAppConnect() {
   const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,6 +20,7 @@ export default function WhatsAppConnect() {
   const [qrLoading, setQrLoading] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
+  const [selectedAccount, setSelectedAccount] = useState<WhatsAppAccount | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const statusPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -36,40 +31,34 @@ export default function WhatsAppConnect() {
 
   useEffect(() => {
     loadAccounts();
-    return () => {
-      stopPolling();
-      stopCountdown();
-      stopStatusPoll();
-    };
+    return () => { stopPolling(); stopCountdown(); stopStatusPoll(); };
   }, []);
 
-  // Background status polling every 30s to keep bolinha in sync
   useEffect(() => {
-    if (accounts.length > 0) {
-      startStatusPoll();
-    }
+    if (accounts.length > 0) startStatusPoll();
     return () => stopStatusPoll();
   }, [accounts.length]);
+
+  // Auto-select first account
+  useEffect(() => {
+    if (accounts.length > 0 && !selectedAccount) {
+      setSelectedAccount(accounts[0]);
+    }
+  }, [accounts, selectedAccount]);
 
   async function loadAccounts() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-
       const { data, error } = await supabase
         .from("whatsapp_accounts")
         .select("*")
         .eq("user_id", user.id)
         .order("created_at", { ascending: true });
-
       if (error) throw error;
       const accs = data || [];
       setAccounts(accs);
-
-      // Sync status with Z-API on load
-      for (const acc of accs) {
-        await syncAccountStatus(acc);
-      }
+      for (const acc of accs) await syncAccountStatus(acc);
     } catch (err) {
       console.error("Error loading WhatsApp accounts:", err);
     } finally {
@@ -82,37 +71,17 @@ export default function WhatsAppConnect() {
       const { data } = await supabase.functions.invoke("zapi-proxy", {
         body: { action: "status", instance_id: acc.instance_id, token: acc.token },
       });
-
       const connected = data?.connected === true || data?.status === "connected" || data?.status === "conectado";
-
       if (connected && acc.status !== "conectado") {
-        // Fetch phone number
         let numero = acc.numero;
-        if (!numero) {
-          numero = await fetchPhoneNumber(acc);
-        }
-
-        await supabase
-          .from("whatsapp_accounts")
-          .update({ status: "conectado", connected_at: new Date().toISOString(), ...(numero ? { numero } : {}) })
-          .eq("id", acc.id);
-
-        setAccounts((prev) =>
-          prev.map((a) => a.id === acc.id ? { ...a, status: "conectado", numero: numero || a.numero } : a)
-        );
+        if (!numero) numero = await fetchPhoneNumber(acc);
+        await supabase.from("whatsapp_accounts").update({ status: "conectado", connected_at: new Date().toISOString(), ...(numero ? { numero } : {}) }).eq("id", acc.id);
+        setAccounts((prev) => prev.map((a) => a.id === acc.id ? { ...a, status: "conectado", numero: numero || a.numero } : a));
       } else if (!connected && acc.status === "conectado") {
-        await supabase
-          .from("whatsapp_accounts")
-          .update({ status: "desconectado" })
-          .eq("id", acc.id);
-
-        setAccounts((prev) =>
-          prev.map((a) => a.id === acc.id ? { ...a, status: "desconectado" } : a)
-        );
+        await supabase.from("whatsapp_accounts").update({ status: "desconectado" }).eq("id", acc.id);
+        setAccounts((prev) => prev.map((a) => a.id === acc.id ? { ...a, status: "desconectado" } : a));
       }
-    } catch (err) {
-      console.error("Sync status error:", err);
-    }
+    } catch (err) { console.error("Sync status error:", err); }
   }
 
   async function fetchPhoneNumber(acc: WhatsAppAccount): Promise<string | null> {
@@ -121,56 +90,32 @@ export default function WhatsAppConnect() {
         body: { action: "get-phone", instance_id: acc.instance_id, token: acc.token },
       });
       return data?.phone || data?.numero || data?.value || null;
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   }
 
-  function stopPolling() {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-  }
-
-  function stopCountdown() {
-    if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
-  }
-
-  function stopStatusPoll() {
-    if (statusPollRef.current) { clearInterval(statusPollRef.current); statusPollRef.current = null; }
-  }
+  function stopPolling() { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } }
+  function stopCountdown() { if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; } }
+  function stopStatusPoll() { if (statusPollRef.current) { clearInterval(statusPollRef.current); statusPollRef.current = null; } }
 
   function startStatusPoll() {
     stopStatusPoll();
     statusPollRef.current = setInterval(async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-
-      const { data } = await supabase
-        .from("whatsapp_accounts")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: true });
-
-      if (data) {
-        for (const acc of data) {
-          await syncAccountStatus(acc);
-        }
-        setAccounts(data);
-      }
+      const { data } = await supabase.from("whatsapp_accounts").select("*").eq("user_id", user.id).order("created_at", { ascending: true });
+      if (data) { for (const acc of data) await syncAccountStatus(acc); setAccounts(data); }
     }, 30000);
   }
 
   const fetchQrCode = useCallback(async (accountId: string) => {
     setQrLoading(true);
     setQrImage(null);
-
     try {
       const account = accounts.find((a) => a.id === accountId);
       const { data, error } = await supabase.functions.invoke("zapi-proxy", {
         body: { action: "qr-code", instance_id: account?.instance_id, token: account?.token },
       });
-
       if (error) throw error;
-
       const qrValue = data?.value || data?.qrcode || data?.qr;
       if (qrValue) {
         const src = qrValue.startsWith("data:") ? qrValue : `data:image/png;base64,${qrValue}`;
@@ -184,9 +129,7 @@ export default function WhatsAppConnect() {
     } catch (err) {
       console.error("QR fetch error:", err);
       toast({ title: "Erro ao buscar QR", description: "Verifique as credenciais da Z-API.", variant: "destructive" });
-    } finally {
-      setQrLoading(false);
-    }
+    } finally { setQrLoading(false); }
   }, [accounts, toast]);
 
   function startCountdown() {
@@ -195,10 +138,7 @@ export default function WhatsAppConnect() {
     countdownRef.current = setInterval(() => {
       seconds -= 1;
       setCountdown(seconds);
-      if (seconds <= 0) {
-        stopCountdown();
-        setQrImage(null);
-      }
+      if (seconds <= 0) { stopCountdown(); setQrImage(null); }
     }, 1000);
   }
 
@@ -210,36 +150,16 @@ export default function WhatsAppConnect() {
         const { data } = await supabase.functions.invoke("zapi-proxy", {
           body: { action: "status", instance_id: account?.instance_id, token: account?.token },
         });
-
         const connected = data?.connected === true || data?.status === "connected" || data?.status === "conectado";
-
         if (connected) {
-          stopPolling();
-          stopCountdown();
-          setShowQrModal(false);
-          setQrImage(null);
-
-          // Fetch phone number
+          stopPolling(); stopCountdown(); setShowQrModal(false); setQrImage(null);
           let numero: string | null = null;
-          if (account) {
-            numero = await fetchPhoneNumber(account);
-          }
-
-          await supabase
-            .from("whatsapp_accounts")
-            .update({
-              status: "conectado",
-              connected_at: new Date().toISOString(),
-              ...(numero ? { numero } : {}),
-            })
-            .eq("id", accountId);
-
+          if (account) numero = await fetchPhoneNumber(account);
+          await supabase.from("whatsapp_accounts").update({ status: "conectado", connected_at: new Date().toISOString(), ...(numero ? { numero } : {}) }).eq("id", accountId);
           toast({ title: "✅ WhatsApp conectado!", description: numero ? `Número: ${numero}` : "O agente está pronto para operar." });
           loadAccounts();
         }
-      } catch (err) {
-        console.error("Status poll error:", err);
-      }
+      } catch (err) { console.error("Status poll error:", err); }
     }, 5000);
   }
 
@@ -248,28 +168,17 @@ export default function WhatsAppConnect() {
       toast({ title: "Limite atingido", description: `Máximo de ${LIMIT} WhatsApps conectados.`, variant: "destructive" });
       return;
     }
-
     let account = accounts.find((a) => a.status !== "conectado");
     if (!account) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-
-      const { data, error } = await supabase
-        .from("whatsapp_accounts")
-        .insert({ user_id: user.id, status: "aguardando" })
-        .select()
-        .single();
-
-      if (error) {
-        toast({ title: "Erro", description: "Não foi possível criar a instância.", variant: "destructive" });
-        return;
-      }
+      const { data, error } = await supabase.from("whatsapp_accounts").insert({ user_id: user.id, status: "aguardando" }).select().single();
+      if (error) { toast({ title: "Erro", description: "Não foi possível criar a instância.", variant: "destructive" }); return; }
       account = data;
       setAccounts((prev) => [...prev, data]);
     } else {
       await supabase.from("whatsapp_accounts").update({ status: "aguardando" }).eq("id", account.id);
     }
-
     setActiveAccountId(account.id);
     setShowQrModal(true);
     fetchQrCode(account.id);
@@ -277,127 +186,162 @@ export default function WhatsAppConnect() {
 
   async function handleDisconnect(accountId: string) {
     try {
-      await supabase
-        .from("whatsapp_accounts")
-        .update({ status: "desconectado", connected_at: null })
-        .eq("id", accountId);
-
-      setAccounts((prev) =>
-        prev.map((a) => a.id === accountId ? { ...a, status: "desconectado", connected_at: null } : a)
-      );
+      await supabase.from("whatsapp_accounts").update({ status: "desconectado", connected_at: null }).eq("id", accountId);
+      setAccounts((prev) => prev.map((a) => a.id === accountId ? { ...a, status: "desconectado", connected_at: null } : a));
+      if (selectedAccount?.id === accountId) setSelectedAccount((prev) => prev ? { ...prev, status: "desconectado" } : null);
       toast({ title: "WhatsApp desconectado" });
-    } catch (err) {
-      console.error("Disconnect error:", err);
-    }
+    } catch (err) { console.error("Disconnect error:", err); }
   }
 
-  function closeModal() {
-    setShowQrModal(false);
-    setQrImage(null);
-    stopPolling();
-    stopCountdown();
-  }
+  function closeModal() { setShowQrModal(false); setQrImage(null); stopPolling(); stopCountdown(); }
 
-  const statusInfo = (status: string) => STATUS_COLORS[status] || STATUS_COLORS.desconectado;
+  const dotColor = (status: string) =>
+    status === "conectado" ? "bg-green-500" : status === "aguardando" ? "bg-yellow-500 animate-pulse" : "bg-red-500";
+
+  const statusLabel = (status: string) =>
+    status === "conectado" ? "Conectado" : status === "aguardando" ? "Aguardando QR" : "Desconectado";
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 animate-pulse">
-        <div className="h-5 w-48 bg-muted rounded mb-3" />
-        <div className="h-10 w-full bg-muted rounded" />
+      <div className="rounded-xl border border-border bg-card p-4 animate-pulse">
+        <div className="h-4 w-32 bg-muted rounded mb-3" />
+        <div className="h-12 w-full bg-muted rounded" />
       </div>
     );
   }
 
   return (
     <>
-      <section className="rounded-xl border border-border bg-card card-glow-blue p-5 space-y-4">
+      <section className="rounded-xl border border-border bg-card p-4 space-y-3">
+        {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center">
-              <Smartphone className="h-4 w-4 text-primary" />
-            </div>
-            <h2 className="font-semibold text-foreground text-sm">Seus WhatsApps</h2>
+            <Smartphone className="h-4 w-4 text-primary" />
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Seus WhatsApps</span>
           </div>
-          <span className="text-xs font-bold px-3 py-1 rounded-full border border-primary/30 bg-primary/10 text-primary">
-            LIMITE DE {LIMIT}/{connectedCount} conectados
+          <span className="text-xs font-medium text-muted-foreground">
+            {connectedCount}/{LIMIT} conectados
           </span>
         </div>
 
-        {/* Instances list */}
-        <div className="space-y-2">
+        {/* Horizontal chips */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
           {accounts.length === 0 ? (
-            <p className="text-xs text-muted-foreground italic text-center py-3 border border-dashed border-border rounded-lg">
-              Nenhuma instância configurada
-            </p>
+            <p className="text-xs text-muted-foreground italic py-2">Nenhuma instância configurada</p>
           ) : (
-            accounts.map((acc) => {
-              const info = statusInfo(acc.status);
+            accounts.map((acc, i) => {
+              const isSelected = selectedAccount?.id === acc.id;
               return (
-                <div
+                <button
                   key={acc.id}
-                  className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-secondary/30"
+                  onClick={() => setSelectedAccount(acc)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-full border transition-all shrink-0 ${
+                    isSelected
+                      ? "border-primary bg-primary/10"
+                      : "border-border bg-secondary/40 hover:border-primary/40"
+                  }`}
                 >
-                  <span className={`h-2.5 w-2.5 rounded-full ${info.dot} shrink-0`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">
-                      {acc.status === "conectado"
-                        ? `Agente IA ${acc.numero ? `(${acc.numero})` : ""}`
-                        : acc.status === "aguardando"
-                        ? "Agente IA — Aguardando QR"
-                        : "Agente IA — Desconectado"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{info.label}</p>
-                  </div>
-                  {acc.status === "conectado" ? (
-                    <div className="flex items-center gap-2">
-                      <Wifi className="h-4 w-4 text-green-500 shrink-0" />
-                      <button
-                        onClick={() => handleDisconnect(acc.id)}
-                        className="text-xs text-destructive hover:underline"
-                      >
-                        Desconectar
-                      </button>
+                  <div className="relative">
+                    <div className="h-7 w-7 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center text-[10px] font-bold text-primary">
+                      AG
                     </div>
-                  ) : (
-                    <WifiOff className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${dotColor(acc.status)}`} />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-xs font-semibold text-foreground leading-tight">Agente IA</p>
+                    <p className="text-[10px] text-muted-foreground leading-tight">
+                      {acc.status === "conectado" && acc.numero
+                        ? acc.numero
+                        : acc.status === "aguardando"
+                        ? "Aguardando QR"
+                        : "Desconectado"}
+                    </p>
+                  </div>
+                  {i > 0 && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30">Extra</span>
                   )}
-                </div>
+                </button>
               );
             })
           )}
+
+          {/* Add button (small) */}
+          {accounts.length < LIMIT && (
+            <button
+              onClick={handleConnect}
+              className="h-11 px-3 rounded-full border border-dashed border-primary/40 text-primary text-xs font-medium hover:bg-primary/10 transition shrink-0 flex items-center gap-1.5"
+            >
+              <QrCode className="h-3.5 w-3.5" />
+              Conectar
+            </button>
+          )}
         </div>
 
-        {/* Connect button */}
-        <button
-          onClick={handleConnect}
-          disabled={connectedCount >= LIMIT}
-          className="w-full h-11 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 border border-primary/40 bg-primary/20 text-primary hover:bg-primary/30 hover:border-primary/60 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <QrCode className="h-4 w-4" />
-          Conectar WhatsApp via QR
-        </button>
+        {/* WhatsApp Extra upsell */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <button className="flex items-center gap-2 text-xs font-medium border border-border rounded-lg px-3 py-1.5 text-muted-foreground hover:text-foreground transition">
+              <Smartphone className="h-3.5 w-3.5" />
+              WhatsApp Extra
+            </button>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-primary/20 text-primary border border-primary/30">R$29,90/mês</span>
+          </div>
+          <button className="h-7 w-7 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition">
+            <Share2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        {/* Selected account detail bar */}
+        {selectedAccount && (
+          <div className="flex items-center gap-3 pt-2 border-t border-border">
+            <div className="h-9 w-9 rounded-full bg-secondary border border-border flex items-center justify-center">
+              <Smartphone className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-foreground">Agente IA</p>
+              <p className="text-xs text-muted-foreground">Agente IA</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {selectedAccount.status === "conectado" ? (
+                <>
+                  <span className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-green-500/10 text-green-500 border border-green-500/30">
+                    <Wifi className="h-3 w-3" /> Conectado
+                  </span>
+                  <button
+                    onClick={() => handleDisconnect(selectedAccount.id)}
+                    className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive border border-destructive/30 hover:bg-destructive/20 transition"
+                  >
+                    <WifiOff className="h-3 w-3" /> Desconectar
+                  </button>
+                </>
+              ) : selectedAccount.status === "aguardando" ? (
+                <span className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-yellow-500/10 text-yellow-500 border border-yellow-500/30 animate-pulse">
+                  Aguardando QR...
+                </span>
+              ) : (
+                <button
+                  onClick={handleConnect}
+                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 transition"
+                >
+                  <QrCode className="h-3 w-3" /> Conectar
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* QR Modal */}
       {showQrModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative w-full max-w-sm mx-4 rounded-2xl border border-border bg-card p-6 space-y-5 shadow-2xl">
-            <button
-              onClick={closeModal}
-              className="absolute top-3 right-3 text-muted-foreground hover:text-foreground transition"
-            >
+            <button onClick={closeModal} className="absolute top-3 right-3 text-muted-foreground hover:text-foreground transition">
               <X className="h-5 w-5" />
             </button>
-
             <div className="text-center space-y-1">
               <h3 className="text-lg font-bold text-foreground">Conectar WhatsApp</h3>
-              <p className="text-xs text-muted-foreground">
-                Escaneie o QR Code com seu WhatsApp Business
-              </p>
+              <p className="text-xs text-muted-foreground">Escaneie o QR Code com seu WhatsApp Business</p>
             </div>
-
-            {/* QR Code area */}
             <div className="flex items-center justify-center min-h-[240px] rounded-xl border border-border bg-secondary/30">
               {qrLoading ? (
                 <div className="flex flex-col items-center gap-2">
@@ -413,19 +357,13 @@ export default function WhatsAppConnect() {
                 </div>
               )}
             </div>
-
-            {/* Countdown + status */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full bg-yellow-500 animate-pulse" />
                 <span className="text-xs text-muted-foreground">Aguardando leitura...</span>
               </div>
-              {countdown > 0 && (
-                <span className="text-xs font-mono text-muted-foreground">Expira em {countdown}s</span>
-              )}
+              {countdown > 0 && <span className="text-xs font-mono text-muted-foreground">Expira em {countdown}s</span>}
             </div>
-
-            {/* Refresh button */}
             <button
               onClick={() => activeAccountId && fetchQrCode(activeAccountId)}
               disabled={qrLoading}
