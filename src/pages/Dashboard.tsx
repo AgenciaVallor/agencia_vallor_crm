@@ -99,7 +99,7 @@ export default function DashboardPage() {
 
     const cidadeAlvo = sortear ? randomCidade(estadoSigla) : cidade;
 
-    addLog(`🔍 Iniciando busca prioritária com HERE Places API...`, "info");
+    addLog(`🔍 Iniciando busca multi-fonte (Google → HERE → OSM)...`, "info");
     addLog(`📍 Buscando "${nicho}" em ${cidadeAlvo} - ${estadoSigla}...`, "info");
 
     try {
@@ -121,14 +121,16 @@ export default function DashboardPage() {
         return;
       }
 
-      const fonte = data.fonte ?? "HERE";
-      const allLeads = data.leads ?? [];
-
-      if (fonte === "OpenStreetMap" && data.fallbackReason) {
-        addLog(`⚠️ HERE falhou (${data.fallbackReason}), usando fallback OpenStreetMap/Overpass...`, "warn");
+      // Show server-side logs
+      if (data.logs && Array.isArray(data.logs)) {
+        for (const logMsg of data.logs) {
+          const type: LogEntry["type"] = logMsg.includes("falhou") || logMsg.includes("Nenhum") ? "warn" : logMsg.includes("concluída") ? "success" : "info";
+          addLog(logMsg, type);
+        }
       }
 
-      addLog(`📥 ${fonte} retornou ${allLeads.length} resultados.`, "info");
+      const fonte = data.fonte ?? "Google";
+      const allLeads = data.leads ?? [];
 
       if (allLeads.length === 0) {
         addLog(`⚠️ Nenhum resultado encontrado para "${nicho}" em ${cidadeAlvo}.`, "warn");
@@ -233,7 +235,7 @@ export default function DashboardPage() {
         <div className="rounded-xl border border-border bg-card card-glow-blue overflow-hidden">
           <div className="flex items-center gap-2 px-5 py-3.5 border-b border-border">
             <Zap className="h-4 w-4 text-primary" />
-            <h2 className="font-semibold text-foreground text-sm">Configurar Captura — HERE + OpenStreetMap</h2>
+            <h2 className="font-semibold text-foreground text-sm">Configurar Captura — Google + HERE + OSM</h2>
           </div>
 
           <div className="p-5">

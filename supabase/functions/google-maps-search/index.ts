@@ -36,12 +36,12 @@ function inferWhatsapp(phone: string | null): string | null {
   return null;
 }
 
-function classifyTemperature(whatsapp: string | null, email: string | null, site: string | null): string {
-  const hasWa = !!whatsapp; const hasEmail = !!email; const hasSite = !!site;
-  if (hasWa && hasEmail && hasSite) return 'Fervendo';
-  if (hasWa && (hasEmail || hasSite)) return 'Quente';
-  if (hasWa) return 'Morno';
-  if (hasSite || hasEmail) return 'Frio';
+function classifyTemp(wa: string | null, email: string | null, site: string | null): string {
+  const w = !!wa, e = !!email, s = !!site;
+  if (w && e && s) return 'Fervendo';
+  if (w && (e || s)) return 'Quente';
+  if (w) return 'Morno';
+  if (s || e) return 'Frio';
   return 'Desinteressado';
 }
 
@@ -51,33 +51,27 @@ interface Lead {
   site: string | null; fonte: string; status_funil: string; temperatura: string;
 }
 
-async function searchGoogleMaps(nicho: string, cidade: string, estado: string, quantidade: number, apiKey: string): Promise<{ leads: Lead[]; error?: string }> {
-  const coords = COORDS[estado] ?? { lat: -15.7975, lng: -47.8919 };
+// ─── SOURCE 1: Google Places API (New) ───
+async function searchGoogle(nicho: string, cidade: string, estado: string, qty: number, apiKey: string): Promise<{ leads: Lead[]; error?: string }> {
+  const coords = COORDS[estado] ?? COORDS.DF;
   const textQuery = `${nicho} em ${cidade}, ${estado}, Brasil`;
-
   const allLeads: Lead[] = [];
   let pageToken: string | undefined;
 
-  // Google Places API (New) - searchText
-  for (let page = 0; page < 3 && allLeads.length < quantidade; page++) {
+  for (let page = 0; page < 3 && allLeads.length < qty; page++) {
     const body: Record<string, unknown> = {
-      textQuery,
-      languageCode: 'pt-BR',
-      maxResultCount: Math.min(20, quantidade - allLeads.length),
-      locationBias: {
-        circle: { center: { latitude: coords.lat, longitude: coords.lng }, radius: 50000.0 }
-      },
+      textQuery, languageCode: 'pt-BR',
+      maxResultCount: Math.min(20, qty - allLeads.length),
+      locationBias: { circle: { center: { latitude: coords.lat, longitude: coords.lng }, radius: 50000.0 } },
     };
-    if (pageToken) {
-      body.pageToken = pageToken;
-    }
+    if (pageToken) body.pageToken = pageToken;
 
     const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': apiKey,
-        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.googleMapsUri,nextPageToken',
+        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,nextPageToken',
       },
       body: JSON.stringify(body),
     });
@@ -85,45 +79,56 @@ async function searchGoogleMaps(nicho: string, cidade: string, estado: string, q
     if (!res.ok) {
       const errText = await res.text();
       console.error('Google Maps API error:', res.status, errText);
-      return { leads: allLeads, error: `Google Maps retornou ${res.status}` };
+      return { leads: allLeads, error: `Google retornou ${res.status}` };
     }
 
     const data = await res.json();
-    const places = data.places ?? [];
-
-    for (const place of places) {
-      const nome = place.displayName?.text ?? 'Empresa sem nome';
-      const phoneRaw = place.nationalPhoneNumber ?? place.internationalPhoneNumber ?? null;
-      const phone = cleanPhone(phoneRaw);
+    for (const place of (data.places ?? [])) {
+      const phone = cleanPhone(place.nationalPhoneNumber ?? place.internationalPhoneNumber);
       const website = place.websiteUri ?? null;
       const whatsapp = inferWhatsapp(phone);
-
       allLeads.push({
-        nome_empresa: nome,
-        nicho, cidade, estado,
-        telefone: phone,
-        whatsapp,
-        email: null,
-        site: website,
-        fonte: 'Google Maps',
-        status_funil: 'Novo',
-        temperatura: classifyTemperature(whatsapp, null, website),
+        nome_empresa: place.displayName?.text ?? 'Sem nome', nicho, cidade, estado,
+        telefone: phone, whatsapp, email: null, site: website,
+        fonte: 'Google', status_funil: 'Novo', temperatura: classifyTemp(whatsapp, null, website),
       });
     }
-
     pageToken = data.nextPageToken;
     if (!pageToken) break;
-
-    // Google requires ~2s delay before using nextPageToken
-    if (allLeads.length < quantidade) {
-      await new Promise(r => setTimeout(r, 2000));
-    }
+    if (allLeads.length < qty) await new Promise(r => setTimeout(r, 2000));
   }
-
   return { leads: allLeads };
 }
 
-async function searchOverpass(nicho: string, cidade: string, _estado: string, quantidade: number): Promise<{ leads: Lead[]; error?: string }> {
+// ─── SOURCE 2: HERE Places API ───
+async function searchHERE(nicho: string, cidade: string, estado: string, qty: number, apiKey: string): Promise<{ leads: Lead[]; error?: string }> {
+  const coords = COORDS[estado] ?? COORDS.DF;
+  const q = `${nicho} ${cidade} ${estado}`;
+  const url = `https://browse.search.hereapi.com/v1/browse?q=${encodeURIComponent(q)}&at=${coords.lat},${coords.lng}&limit=${Math.min(qty, 100)}&apiKey=${apiKey}`;
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error('HERE API error:', res.status, errText);
+    return { leads: [], error: `HERE retornou ${res.status}` };
+  }
+
+  const data = await res.json();
+  const leads: Lead[] = (data.items ?? []).map((item: any) => {
+    const phone = cleanPhone(item.contacts?.[0]?.phone?.[0]?.value);
+    const website = item.contacts?.[0]?.www?.[0]?.value ?? null;
+    const whatsapp = inferWhatsapp(phone);
+    return {
+      nome_empresa: item.title ?? 'Sem nome', nicho, cidade, estado,
+      telefone: phone, whatsapp, email: null, site: website,
+      fonte: 'HERE', status_funil: 'Novo', temperatura: classifyTemp(whatsapp, null, website),
+    };
+  });
+  return { leads };
+}
+
+// ─── SOURCE 3: OpenStreetMap / Overpass ───
+async function searchOverpass(nicho: string, cidade: string, estado: string, qty: number): Promise<{ leads: Lead[]; error?: string }> {
   const nichoLower = nicho.toLowerCase();
   let osmFilter = `"name"~"${nicho}",i`;
 
@@ -145,13 +150,11 @@ async function searchOverpass(nicho: string, cidade: string, _estado: string, qu
     marmoraria: '"craft"="stonemason"', vidraçaria: '"craft"="glaziery"',
     loja: '"shop"="yes"', bar: '"amenity"="bar"', café: '"amenity"="cafe"',
   };
-
   for (const [key, val] of Object.entries(tagMap)) {
     if (nichoLower.includes(key)) { osmFilter = val; break; }
   }
 
-  const query = `[out:json][timeout:25];area["name"="${cidade}"]["admin_level"~"8|7"]->.searchArea;(node[${osmFilter}](area.searchArea);way[${osmFilter}](area.searchArea););out body ${quantidade};`;
-
+  const query = `[out:json][timeout:25];area["name"="${cidade}"]["admin_level"~"8|7"]->.searchArea;(node[${osmFilter}](area.searchArea);way[${osmFilter}](area.searchArea););out body ${qty};`;
   const res = await fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -165,29 +168,24 @@ async function searchOverpass(nicho: string, cidade: string, _estado: string, qu
   }
 
   const data = await res.json();
-  const elements = data.elements ?? [];
-
-  const leads: Lead[] = elements.filter((el: any) => el.tags?.name).map((el: any) => {
+  const leads: Lead[] = (data.elements ?? []).filter((el: any) => el.tags?.name).map((el: any) => {
     const tags = el.tags ?? {};
     const phone = cleanPhone(tags.phone ?? tags['contact:phone']);
     const website = tags.website ?? tags['contact:website'] ?? null;
     const whatsapp = inferWhatsapp(phone);
     return {
-      nome_empresa: tags.name, nicho, cidade, estado: _estado,
-      telefone: phone, whatsapp,
-      email: tags.email ?? tags['contact:email'] ?? null,
+      nome_empresa: tags.name, nicho, cidade, estado,
+      telefone: phone, whatsapp, email: tags.email ?? tags['contact:email'] ?? null,
       site: website, fonte: 'OpenStreetMap', status_funil: 'Novo',
-      temperatura: classifyTemperature(whatsapp, tags.email ?? null, website),
+      temperatura: classifyTemp(whatsapp, tags.email ?? null, website),
     };
   });
-
   return { leads };
 }
 
+// ─── MAIN HANDLER ───
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
     const authHeader = req.headers.get('Authorization');
@@ -196,11 +194,8 @@ Deno.serve(async (req) => {
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
+    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!,
+      { global: { headers: { Authorization: authHeader } } });
 
     const token = authHeader.replace('Bearer ', '');
     const { data: claimsData, error: claimsErr } = await supabase.auth.getClaims(token);
@@ -215,44 +210,66 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const safeNicho = String(nicho).slice(0, 100).trim();
-    const safeCidade = String(cidade).slice(0, 100).trim();
-    const safeEstado = String(estado).slice(0, 5).trim();
+    const sNicho = String(nicho).slice(0, 100).trim();
+    const sCidade = String(cidade).slice(0, 100).trim();
+    const sEstado = String(estado).slice(0, 5).trim();
     const qty = Math.min(Math.max(Number(maxResults) || 20, 1), 100);
 
-    console.log(`User ${claimsData.claims.sub} buscando "${safeNicho}" em ${safeCidade}-${safeEstado}, qty=${qty}`);
+    console.log(`User ${claimsData.claims.sub} buscando "${sNicho}" em ${sCidade}-${sEstado}, qty=${qty}`);
 
-    const googleKey = Deno.env.get('GOOGLE_MAPS_API_KEY');
-    let fonte = 'Google Maps';
     let leads: Lead[] = [];
-    let fallbackReason = '';
+    let fonte = '';
+    const logs: string[] = [];
 
+    // 1) Google Maps
+    const googleKey = Deno.env.get('GOOGLE_MAPS_API_KEY');
     if (googleKey) {
-      const gmResult = await searchGoogleMaps(safeNicho, safeCidade, safeEstado, qty, googleKey);
-      if (gmResult.leads.length > 0) {
-        leads = gmResult.leads;
-        console.log(`Google Maps retornou ${leads.length} leads`);
+      logs.push('Buscando no Google Places...');
+      console.log('Buscando no Google Places...');
+      const r = await searchGoogle(sNicho, sCidade, sEstado, qty, googleKey);
+      if (r.leads.length > 0) {
+        leads = r.leads; fonte = 'Google';
+        logs.push(`Google retornou ${leads.length} resultados.`);
+        console.log(`Google retornou ${leads.length} leads`);
       } else {
-        fallbackReason = gmResult.error ?? 'Sem resultados';
-        console.log(`Google Maps falhou: ${fallbackReason}`);
+        logs.push(`Google falhou: ${r.error ?? 'Sem resultados'}`);
+        console.log(`Google falhou: ${r.error}`);
       }
-    } else {
-      fallbackReason = 'GOOGLE_MAPS_API_KEY não configurada';
-      console.log(fallbackReason);
     }
 
-    // Fallback: OpenStreetMap/Overpass
+    // 2) HERE fallback
     if (leads.length === 0) {
-      console.log('Tentando fallback OpenStreetMap/Overpass...');
-      fonte = 'OpenStreetMap';
-      const osmResult = await searchOverpass(safeNicho, safeCidade, safeEstado, qty);
-      leads = osmResult.leads;
-      if (osmResult.error) fallbackReason += ` | OSM: ${osmResult.error}`;
+      const hereKey = Deno.env.get('HERE_API_KEY');
+      if (hereKey) {
+        logs.push('Tentando HERE Places (fallback 1)...');
+        console.log('Tentando HERE Places...');
+        const r = await searchHERE(sNicho, sCidade, sEstado, qty, hereKey);
+        if (r.leads.length > 0) {
+          leads = r.leads; fonte = 'HERE';
+          logs.push(`HERE retornou ${leads.length} resultados.`);
+          console.log(`HERE retornou ${leads.length} leads`);
+        } else {
+          logs.push(`HERE falhou: ${r.error ?? 'Sem resultados'}`);
+          console.log(`HERE falhou: ${r.error}`);
+        }
+      }
+    }
+
+    // 3) OSM fallback
+    if (leads.length === 0) {
+      logs.push('Tentando OpenStreetMap/Overpass (fallback 2)...');
+      console.log('Tentando Overpass...');
+      const r = await searchOverpass(sNicho, sCidade, sEstado, qty);
+      leads = r.leads; fonte = 'OpenStreetMap';
+      logs.push(r.leads.length > 0 ? `OpenStreetMap retornou ${leads.length} resultados.` : `OpenStreetMap: ${r.error ?? 'Sem resultados'}`);
       console.log(`Overpass retornou ${leads.length} leads`);
     }
 
+    if (leads.length > 0) logs.push(`Captura concluída! ${leads.length} leads encontrados via ${fonte}.`);
+    else logs.push('Nenhum lead encontrado nas fontes disponíveis.');
+
     return new Response(
-      JSON.stringify({ success: true, leads: leads.slice(0, qty), total: leads.length, fonte, fallbackReason: leads.length === 0 ? fallbackReason : undefined }),
+      JSON.stringify({ success: true, leads: leads.slice(0, qty), total: leads.length, fonte, logs }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (err) {
