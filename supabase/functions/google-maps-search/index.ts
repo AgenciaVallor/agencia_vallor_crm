@@ -1,3 +1,5 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
@@ -9,6 +11,31 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // ── Auth: validação JWT explícita ──
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Não autorizado.' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_ANON_KEY')!,
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    const token = authHeader.replace('Bearer ', '');
+    const { data: claimsData, error: claimsErr } = await supabase.auth.getClaims(token);
+    if (claimsErr || !claimsData?.claims) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Token inválido ou expirado.' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ── Google Maps API Key ──
     const apiKey = Deno.env.get('GOOGLE_MAPS_API_KEY');
     if (!apiKey) {
       return new Response(
@@ -26,19 +53,24 @@ Deno.serve(async (req) => {
       );
     }
 
-    const textQuery = `${nicho} em ${cidade}, ${estado}, Brasil`;
+    // Sanitiza inputs
+    const safeNicho = String(nicho).slice(0, 100).trim();
+    const safeCidade = String(cidade).slice(0, 100).trim();
+    const safeEstado = String(estado).slice(0, 5).trim();
 
-    console.log(`Buscando: "${textQuery}" | pageToken: ${pageToken ?? 'N/A'}`);
+    const textQuery = `${safeNicho} em ${safeCidade}, ${safeEstado}, Brasil`;
+
+    console.log(`User ${claimsData.claims.sub} buscando: "${textQuery}"`);
 
     const body: Record<string, unknown> = {
       textQuery,
-      maxResultCount: Math.min(maxResults, 20), // Google limita 20 por página
+      maxResultCount: Math.min(Number(maxResults) || 20, 20),
       languageCode: 'pt-BR',
       regionCode: 'BR',
     };
 
     if (pageToken) {
-      body.pageToken = pageToken;
+      body.pageToken = String(pageToken);
     }
 
     const placesRes = await fetch('https://places.googleapis.com/v1/places:searchText', {
@@ -66,7 +98,7 @@ Deno.serve(async (req) => {
       const errText = await placesRes.text();
       console.error('Google Places API error:', errText);
       return new Response(
-        JSON.stringify({ success: false, error: `Google API retornou erro ${placesRes.status}: ${errText}` }),
+        JSON.stringify({ success: false, error: `Google API retornou erro ${placesRes.status}` }),
         { status: placesRes.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -75,29 +107,24 @@ Deno.serve(async (req) => {
     const places = data.places ?? [];
     const nextPageToken = data.nextPageToken ?? null;
 
-    // Transforma resultado no formato de lead do CRM
     const leads = places.map((place: Record<string, unknown>) => {
       const displayName = place.displayName as Record<string, string> | undefined;
       const nome_empresa = displayName?.text ?? 'Empresa sem nome';
 
       const address = (place.formattedAddress as string) ?? '';
       const addressParts = address.split(',').map((p: string) => p.trim());
-      const cidadeDetected = addressParts.length >= 2 ? addressParts[addressParts.length - 3] || cidade : cidade;
+      const cidadeDetected = addressParts.length >= 2 ? addressParts[addressParts.length - 3] || safeCidade : safeCidade;
 
-      // Extrai telefone
       const telefone = (place.nationalPhoneNumber as string | null) ?? null;
-      const intlPhone = (place.internationalPhoneNumber as string | null) ?? null;
 
-      // Tenta detectar WhatsApp — se tem telefone nacional BR, considera WhatsApp
       const whatsapp = telefone
         ? telefone.replace(/\D/g, '').replace(/^0/, '')
         : null;
 
       const site = (place.websiteUri as string | null) ?? null;
       const rating = (place.rating as number | null) ?? null;
-
-      // Temperatura baseada em rating e avaliações
       const ratingCount = (place.userRatingCount as number) ?? 0;
+
       let temperatura = 'Frio';
       if (rating && rating >= 4.5 && ratingCount > 50) temperatura = 'Fervendo';
       else if (rating && rating >= 4.0 && ratingCount > 20) temperatura = 'Quente';
@@ -105,12 +132,12 @@ Deno.serve(async (req) => {
 
       return {
         nome_empresa,
-        nicho,
-        cidade: cidadeDetected || cidade,
-        estado,
+        nicho: safeNicho,
+        cidade: cidadeDetected || safeCidade,
+        estado: safeEstado,
         telefone,
         whatsapp,
-        email: null, // Places API não fornece email
+        email: null,
         site,
         fonte: 'Google Maps',
         status_funil: 'Novo',
@@ -118,7 +145,7 @@ Deno.serve(async (req) => {
       };
     });
 
-    console.log(`Retornando ${leads.length} leads | nextPageToken: ${nextPageToken ?? 'nenhum'}`);
+    console.log(`Retornando ${leads.length} leads`);
 
     return new Response(
       JSON.stringify({ success: true, leads, nextPageToken, total: leads.length }),
@@ -127,9 +154,8 @@ Deno.serve(async (req) => {
 
   } catch (err) {
     console.error('Erro inesperado:', err);
-    const msg = err instanceof Error ? err.message : 'Erro interno.';
     return new Response(
-      JSON.stringify({ success: false, error: msg }),
+      JSON.stringify({ success: false, error: 'Erro interno.' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
