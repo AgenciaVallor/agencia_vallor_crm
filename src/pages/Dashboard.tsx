@@ -168,6 +168,9 @@ export default function DashboardPage() {
         fonte: l.fonte ?? fonte,
         status_funil: l.status_funil ?? 'Novo',
         temperatura: l.temperatura ?? 'Frio',
+        endereco: l.endereco ?? null,
+        instagram: l.instagram ?? null,
+        linkedin: l.linkedin ?? null,
         user_id: user?.id,
       }));
 

@@ -16,6 +16,10 @@ type Lead = {
   site: string | null;
   temperatura: string;
   status_funil: string;
+  endereco: string | null;
+  instagram: string | null;
+  linkedin: string | null;
+  observacoes: string | null;
 };
 
 const COLUNAS: { id: string; label: string; color: string; border: string; bg: string }[] = [

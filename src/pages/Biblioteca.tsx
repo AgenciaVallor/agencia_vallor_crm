@@ -24,6 +24,10 @@ type Lead = {
   status_funil: string;
   fonte: string;
   created_at: string;
+  endereco: string | null;
+  instagram: string | null;
+  linkedin: string | null;
+  observacoes: string | null;
 };
 
 const TEMPERATURAS = ["Todos", "Fervendo", "Quente", "Morno", "Frio", "Desinteressado"];
@@ -71,6 +75,10 @@ function EditModal({ lead, onClose, onSave }: { lead: Lead; onClose: () => void;
         status_funil: form.status_funil,
         cidade: form.cidade,
         estado: form.estado,
+        instagram: form.instagram,
+        linkedin: form.linkedin,
+        endereco: form.endereco,
+        observacoes: form.observacoes,
       })
       .eq("id", lead.id)
       .select()
@@ -135,6 +143,20 @@ function EditModal({ lead, onClose, onSave }: { lead: Lead; onClose: () => void;
           {field("Estado", "estado")}
           {field("Temperatura", "temperatura", { options: ["Fervendo", "Quente", "Morno", "Frio", "Desinteressado"] })}
           {field("Status Funil", "status_funil", { options: ["Novo", "Contato", "Negociando", "Proposta", "Ganho", "Perdido"] })}
+          {field("Instagram", "instagram")}
+          {field("LinkedIn", "linkedin")}
+          {field("Endereço", "endereco")}
+        </div>
+        <div className="space-y-1 mt-3">
+          <label className="text-xs text-slate-400 font-medium">Observações</label>
+          <textarea
+            value={String(form.observacoes ?? "")}
+            onChange={e => setForm(f => ({ ...f, observacoes: e.target.value }))}
+            rows={3}
+            className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm
+              focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-slate-600 resize-none"
+            placeholder="Notas sobre este lead..."
+          />
         </div>
 
         <div className="flex gap-2 pt-2">
@@ -209,6 +231,28 @@ function LeadModal({ lead, onClose, onDelete, onEdit }: {
               className="flex items-center gap-2 text-purple-400 hover:text-purple-300 transition-colors">
               <Globe className="h-4 w-4 shrink-0" />{lead.site}
             </a>
+          )}
+          {lead.endereco && (
+            <div className="flex items-center gap-2 text-slate-300">
+              <MapPin className="h-4 w-4 text-amber-400 shrink-0" />{lead.endereco}
+            </div>
+          )}
+          {lead.instagram && (
+            <a href={`https://instagram.com/${lead.instagram.replace(/^@/, '')}`} target="_blank" rel="noreferrer"
+              className="flex items-center gap-2 text-pink-400 hover:text-pink-300 transition-colors">
+              <ExternalLink className="h-4 w-4 shrink-0" />@{lead.instagram.replace(/^@/, '')}
+            </a>
+          )}
+          {lead.linkedin && (
+            <a href={lead.linkedin.startsWith("http") ? lead.linkedin : `https://linkedin.com/in/${lead.linkedin}`} target="_blank" rel="noreferrer"
+              className="flex items-center gap-2 text-blue-300 hover:text-blue-200 transition-colors">
+              <ExternalLink className="h-4 w-4 shrink-0" />{lead.linkedin}
+            </a>
+          )}
+          {lead.observacoes && (
+            <div className="mt-2 p-2 rounded-lg bg-white/5 border border-white/10 text-xs text-slate-300">
+              {lead.observacoes}
+            </div>
           )}
         </div>
 
@@ -416,10 +460,11 @@ export default function BibliotecaPage() {
   };
 
   const exportCSV = () => {
-    const headers = ["Nome", "Nicho", "Cidade", "Estado", "WhatsApp", "Email", "Site", "Temperatura", "Status"];
+    const headers = ["Nome", "Nicho", "Cidade", "Estado", "WhatsApp", "Email", "Site", "Temperatura", "Status", "Instagram", "LinkedIn", "Endereço", "Observações"];
     const rows = leads.map(l => [
       l.nome_empresa, l.nicho, l.cidade, l.estado,
-      l.whatsapp ?? "", l.email ?? "", l.site ?? "", l.temperatura, l.status_funil
+      l.whatsapp ?? "", l.email ?? "", l.site ?? "", l.temperatura, l.status_funil,
+      l.instagram ?? "", l.linkedin ?? "", l.endereco ?? "", l.observacoes ?? ""
     ]);
     const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });

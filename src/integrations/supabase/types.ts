@@ -172,11 +172,15 @@ export type Database = {
           cidade: string
           created_at: string
           email: string | null
+          endereco: string | null
           estado: string
           fonte: string
           id: string
+          instagram: string | null
+          linkedin: string | null
           nicho: string
           nome_empresa: string
+          observacoes: string | null
           site: string | null
           status_funil: string
           telefone: string | null
@@ -189,11 +193,15 @@ export type Database = {
           cidade: string
           created_at?: string
           email?: string | null
+          endereco?: string | null
           estado: string
           fonte?: string
           id?: string
+          instagram?: string | null
+          linkedin?: string | null
           nicho: string
           nome_empresa: string
+          observacoes?: string | null
           site?: string | null
           status_funil?: string
           telefone?: string | null
@@ -206,11 +214,15 @@ export type Database = {
           cidade?: string
           created_at?: string
           email?: string | null
+          endereco?: string | null
           estado?: string
           fonte?: string
           id?: string
+          instagram?: string | null
+          linkedin?: string | null
           nicho?: string
           nome_empresa?: string
+          observacoes?: string | null
           site?: string | null
           status_funil?: string
           telefone?: string | null
