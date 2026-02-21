@@ -1,5 +1,3 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -12,49 +10,59 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const clientToken = Deno.env.get("ZAPI_CLIENT_TOKEN");
+    if (!clientToken) {
+      return new Response(
+        JSON.stringify({ error: "ZAPI_CLIENT_TOKEN not configured" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const { action, instance_id, token } = await req.json();
 
-    // Use provided instance/token or fallback to env
     const instId = instance_id || Deno.env.get("ZAPI_INSTANCE");
     const instToken = token || Deno.env.get("ZAPI_TOKEN");
 
     if (!instId || !instToken) {
       return new Response(
-        JSON.stringify({ error: "Missing Z-API credentials" }),
+        JSON.stringify({ error: "Missing Z-API instance/token" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const base = `https://api.z-api.io/instances/${instId}/token/${instToken}`;
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Client-Token": clientToken,
+    };
+
+    let endpoint = "";
+    let method = "GET";
+
     if (action === "qr-code") {
-      const resp = await fetch(`${base}/qr-code`, { method: "GET" });
-      const data = await resp.json();
-      return new Response(JSON.stringify(data), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      endpoint = "/qr-code";
+    } else if (action === "status") {
+      endpoint = "/status";
+    } else if (action === "get-phone") {
+      endpoint = "/phone";
+    } else {
+      return new Response(
+        JSON.stringify({ error: "Unknown action. Use: qr-code, status, get-phone" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    if (action === "status") {
-      const resp = await fetch(`${base}/status`, { method: "GET" });
-      const data = await resp.json();
-      return new Response(JSON.stringify(data), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    console.log(`Z-API proxy: ${action} -> ${base}${endpoint}`);
 
-    if (action === "get-phone") {
-      const resp = await fetch(`${base}/phone`, { method: "GET" });
-      const data = await resp.json();
-      return new Response(JSON.stringify(data), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const resp = await fetch(`${base}${endpoint}`, { method, headers });
+    const data = await resp.json();
 
-    return new Response(
-      JSON.stringify({ error: "Unknown action. Use: qr-code, status, get-phone" }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    console.log(`Z-API response (${action}):`, JSON.stringify(data));
+
+    return new Response(JSON.stringify(data), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (e) {
     console.error("zapi-proxy error:", e);
     return new Response(
