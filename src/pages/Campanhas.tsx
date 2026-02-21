@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Play, Pause, Send, MessageSquare, Users, Clock, Zap, X, ChevronRight, ChevronLeft, Trash2, Loader2, AlertTriangle, Calendar, MessageCircle, CheckCircle, XCircle, User } from "lucide-react";
+import { Plus, Play, Pause, Send, MessageSquare, Users, Clock, Zap, X, ChevronRight, ChevronLeft, Trash2, Loader2, AlertTriangle, Calendar, MessageCircle, CheckCircle, XCircle, User, Mail, Paperclip, Upload } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { SearchableDropdown } from "@/components/SearchableDropdown";
@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 interface Campaign {
   id: string;
   nome: string;
+  tipo: string;
   nicho_filtro: string;
   cidade_filtro: string;
   estado_filtro: string;
@@ -25,6 +26,12 @@ interface Campaign {
   total_enviados: number;
   total_leads: number;
   created_at: string;
+  assunto_email: string;
+  texto_email: string;
+  usar_ia_email: boolean;
+  remetente_nome: string;
+  remetente_email: string;
+  anexos_urls: string[];
 }
 
 interface CampaignMessage {
@@ -150,6 +157,7 @@ export default function Campanhas() {
   // Wizard form
   const [form, setForm] = useState({
     nome: "",
+    tipo: "" as "" | "whatsapp" | "email",
     nicho_filtro: "",
     cidade_filtro: "",
     estado_filtro: "",
@@ -159,8 +167,16 @@ export default function Campanhas() {
     limite_leads: 60,
     texto_manual: "",
     usar_ia: true,
+    // Email-specific
+    assunto_email: "",
+    texto_email: "",
+    usar_ia_email: false,
+    remetente_nome: "Vallor Agência",
+    remetente_email: "",
   });
   const [leadsCount, setLeadsCount] = useState(0);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [anexosUrls, setAnexosUrls] = useState<string[]>([]);
   useEffect(() => { fetchCampaigns(); }, []);
 
 
@@ -179,22 +195,24 @@ export default function Campanhas() {
   // Count leads matching wizard filters
   const countLeads = useCallback(async () => {
     if (!user) return;
-    let q = supabase.from("leads").select("id", { count: "exact", head: true }).eq("user_id", user.id).not("whatsapp", "is", null);
+    const contactField = form.tipo === "email" ? "email" : "whatsapp";
+    let q = supabase.from("leads").select("id", { count: "exact", head: true }).eq("user_id", user.id).not(contactField, "is", null);
     if (form.nicho_filtro) q = q.ilike("nicho", `%${form.nicho_filtro}%`);
     if (form.cidade_filtro) q = q.ilike("cidade", `%${form.cidade_filtro}%`);
     if (form.estado_filtro) q = q.eq("estado", form.estado_filtro);
     if (form.status_filtro) q = q.eq("status_funil", form.status_filtro);
     const { count } = await q;
     setLeadsCount(count || 0);
-  }, [user, form.nicho_filtro, form.cidade_filtro, form.estado_filtro, form.status_filtro]);
+  }, [user, form.tipo, form.nicho_filtro, form.cidade_filtro, form.estado_filtro, form.status_filtro]);
 
   useEffect(() => { if (wizardStep === 2) countLeads(); }, [wizardStep, countLeads]);
 
   async function createCampaign() {
-    if (!form.nome.trim()) return;
+    if (!form.nome.trim() || !form.tipo) return;
     const delay = Math.max(form.delay_min, 30);
-    const { data, error } = await supabase.from("campaigns").insert({
+    const insertData: any = {
       nome: form.nome,
+      tipo: form.tipo,
       nicho_filtro: form.nicho_filtro,
       cidade_filtro: form.cidade_filtro,
       estado_filtro: form.estado_filtro,
@@ -202,27 +220,52 @@ export default function Campanhas() {
       quantidade_por_dia: form.limite_leads,
       status: "pausada",
       total_leads: Math.min(leadsCount, form.limite_leads),
-    }).select().single();
+    };
+    if (form.tipo === "email") {
+      insertData.assunto_email = form.assunto_email;
+      insertData.texto_email = form.texto_email;
+      insertData.usar_ia_email = form.usar_ia_email;
+      insertData.remetente_nome = form.remetente_nome;
+      insertData.remetente_email = form.remetente_email;
+      insertData.anexos_urls = anexosUrls;
+    }
+    const { data, error } = await supabase.from("campaigns").insert(insertData).select().single();
     if (error) { toast({ title: "Erro ao criar campanha", variant: "destructive" }); return; }
     toast({ title: `Campanha "${form.nome}" criada com sucesso!` });
-    setCampaigns(prev => [data, ...prev]);
+    setCampaigns(prev => [data as any, ...prev]);
     resetWizard();
   }
 
   function resetWizard() {
     setWizardOpen(false); setWizardStep(1);
-    setForm({ nome: "", nicho_filtro: "", cidade_filtro: "", estado_filtro: "", status_filtro: "", delay_min: 30, delay_max: 120, limite_leads: 60, texto_manual: "", usar_ia: true });
+    setForm({ nome: "", tipo: "", nicho_filtro: "", cidade_filtro: "", estado_filtro: "", status_filtro: "", delay_min: 30, delay_max: 120, limite_leads: 60, texto_manual: "", usar_ia: true, assunto_email: "", texto_email: "", usar_ia_email: false, remetente_nome: "Vallor Agência", remetente_email: "" });
+    setAnexosUrls([]);
   }
 
   async function toggleCampaign(campaign: Campaign) {
     if (campaign.status === "ativa") {
+      const fnName = campaign.tipo === "email" ? "send-email-brevo" : "campaign-engine";
       await supabase.from("campaigns").update({ status: "pausada" }).eq("id", campaign.id);
-      await supabase.functions.invoke("campaign-engine", { body: { action: "pause", campaign_id: campaign.id } });
+      await supabase.functions.invoke(fnName, { body: { action: "pause", campaign_id: campaign.id } });
       toast({ title: "Campanha pausada" });
       setCampaigns(prev => prev.map(c => c.id === campaign.id ? { ...c, status: "pausada" } : c));
     } else {
-      const { error } = await supabase.functions.invoke("campaign-engine", { body: { action: "start", campaign_id: campaign.id } });
-      if (error) { toast({ title: "Erro ao iniciar. Verifique Z-API.", variant: "destructive" }); return; }
+      // Check email daily limit
+      if (campaign.tipo === "email") {
+        const today = new Date().toISOString().split("T")[0];
+        const { data: stats } = await supabase
+          .from("email_campaign_stats")
+          .select("total_enviados")
+          .eq("data", today)
+          .single();
+        if (stats && stats.total_enviados >= 300) {
+          toast({ title: "Limite diário de 300 emails atingido. Tente amanhã ou aumente plano Brevo.", variant: "destructive" });
+          return;
+        }
+      }
+      const fnName = campaign.tipo === "email" ? "send-email-brevo" : "campaign-engine";
+      const { error } = await supabase.functions.invoke(fnName, { body: { action: "start", campaign_id: campaign.id } });
+      if (error) { toast({ title: campaign.tipo === "email" ? "Erro ao iniciar. Verifique Brevo API." : "Erro ao iniciar. Verifique Z-API.", variant: "destructive" }); return; }
       await supabase.from("campaigns").update({ status: "ativa" }).eq("id", campaign.id);
       toast({ title: "Campanha iniciada!" });
       setCampaigns(prev => prev.map(c => c.id === campaign.id ? { ...c, status: "ativa" } : c));
@@ -314,6 +357,10 @@ export default function Campanhas() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <h3 className="font-semibold text-foreground truncate">{campaign.nome}</h3>
+                            <span className={cn("text-xs px-2 py-0.5 rounded-full border",
+                              campaign.tipo === "email" ? "bg-blue-500/10 text-blue-400 border-blue-500/30" : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30")}>
+                              {campaign.tipo === "email" ? "📧 Email" : "💬 WhatsApp"}
+                            </span>
                             <span className={cn("text-xs px-2 py-0.5 rounded-full border", statusColor(campaign.status))}>{campaign.status}</span>
                           </div>
                           <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -387,13 +434,30 @@ export default function Campanhas() {
             </div>
 
             <div className="px-6 pb-6 space-y-4">
-              {/* Step 1: Nome */}
+              {/* Step 1: Nome + Tipo */}
               {wizardStep === 1 && (
                 <>
                   <div>
-                    <h3 className="text-lg font-bold text-foreground">Nome da Campanha</h3>
-                    <p className="text-sm text-muted-foreground">Dê um nome descritivo para identificar sua campanha</p>
+                    <h3 className="text-lg font-bold text-foreground">Tipo e Nome da Campanha</h3>
+                    <p className="text-sm text-muted-foreground">Escolha o canal de disparo e dê um nome à campanha</p>
                   </div>
+
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground block mb-2">Tipo de Disparo *</label>
+                    <div className="flex gap-3">
+                      <button onClick={() => setForm(f => ({ ...f, tipo: "whatsapp" }))}
+                        className={cn("flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border text-sm font-medium transition-all",
+                          form.tipo === "whatsapp" ? "border-primary bg-primary/15 text-primary shadow-sm" : "border-border bg-secondary text-muted-foreground hover:border-primary/40")}>
+                        <Zap className="h-4 w-4" /> WhatsApp
+                      </button>
+                      <button onClick={() => setForm(f => ({ ...f, tipo: "email" }))}
+                        className={cn("flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border text-sm font-medium transition-all",
+                          form.tipo === "email" ? "border-primary bg-primary/15 text-primary shadow-sm" : "border-border bg-secondary text-muted-foreground hover:border-primary/40")}>
+                        <Mail className="h-4 w-4" /> Email
+                      </button>
+                    </div>
+                  </div>
+
                   <Input placeholder='Ex: "Prospecção Dentistas SP"' value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} className="bg-secondary border-border" />
                 </>
               )}
@@ -436,7 +500,7 @@ export default function Campanhas() {
                   </div>
 
                   <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
-                    <p className="text-sm font-medium text-foreground">Leads encontrados <span className="text-primary font-bold">{leadsCount}</span> com telefone</p>
+                    <p className="text-sm font-medium text-foreground">Leads encontrados <span className="text-primary font-bold">{leadsCount}</span> com {form.tipo === "email" ? "email" : "telefone"}</p>
                     <p className="text-xs text-muted-foreground mt-1">Leads selecionados: {Math.min(leadsCount, form.limite_leads)}/{form.limite_leads}</p>
                   </div>
 
@@ -454,7 +518,7 @@ export default function Campanhas() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground block mb-1.5">Intervalo entre mensagens</label>
+                    <label className="text-xs font-medium text-muted-foreground block mb-1.5">Intervalo entre envios</label>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="text-xs text-muted-foreground">Mín (s)</label>
@@ -465,40 +529,129 @@ export default function Campanhas() {
                         <Input type="number" min={30} max={300} value={form.delay_max} onChange={e => setForm(f => ({ ...f, delay_max: Number(e.target.value) }))} className="bg-secondary border-border" />
                       </div>
                     </div>
-                    {form.delay_min < 120 && (
+                    {form.tipo === "whatsapp" && form.delay_min < 120 && (
                       <p className="text-xs text-yellow-400 flex items-center gap-1 mt-1"><AlertTriangle className="h-3 w-3" /> Intervalos curtos aumentam risco de ban</p>
                     )}
                   </div>
 
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground block mb-1.5">Limite de leads por dia (máx 60)</label>
-                    <Input type="number" min={1} max={60} value={form.limite_leads} onChange={e => setForm(f => ({ ...f, limite_leads: Math.min(60, Number(e.target.value)) }))} className="bg-secondary border-border w-28" />
+                    <label className="text-xs font-medium text-muted-foreground block mb-1.5">
+                      {form.tipo === "email" ? "Limite de leads (máx 300/dia Brevo)" : "Limite de leads por dia (máx 60)"}
+                    </label>
+                    <Input type="number" min={1} max={form.tipo === "email" ? 300 : 60}
+                      value={form.limite_leads}
+                      onChange={e => setForm(f => ({ ...f, limite_leads: Math.min(form.tipo === "email" ? 300 : 60, Number(e.target.value)) }))}
+                      className="bg-secondary border-border w-28" />
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium text-muted-foreground block">Texto do disparo</label>
-                    <div className="flex gap-2">
-                      <button onClick={() => setForm(f => ({ ...f, usar_ia: false }))}
-                        className={cn("flex-1 py-2 rounded-lg border text-sm font-medium transition-colors",
-                          !form.usar_ia ? "border-primary bg-primary/20 text-primary" : "border-border bg-secondary text-muted-foreground")}>
-                        ✏️ Manual
-                      </button>
-                      <button onClick={() => setForm(f => ({ ...f, usar_ia: true }))}
-                        className={cn("flex-1 py-2 rounded-lg border text-sm font-medium transition-colors",
-                          form.usar_ia ? "border-primary bg-primary/20 text-primary" : "border-border bg-secondary text-muted-foreground")}>
-                        🤖 IA
-                      </button>
-                    </div>
-                    {!form.usar_ia ? (
-                      <textarea value={form.texto_manual} onChange={e => setForm(f => ({ ...f, texto_manual: e.target.value }))} rows={3}
-                        className="w-full rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground resize-none"
-                        placeholder="Digite o texto do disparo..." />
-                    ) : (
-                      <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
-                        <p className="text-xs text-muted-foreground">🤖 O agente IA gerará textos únicos baseados no nicho, descrição do negócio e técnicas BRAT/SPIN</p>
+                  {/* Email-specific fields */}
+                  {form.tipo === "email" && (
+                    <div className="space-y-3 pt-2 border-t border-border">
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground block mb-1">Nome do Remetente</label>
+                        <Input value={form.remetente_nome} onChange={e => setForm(f => ({ ...f, remetente_nome: e.target.value }))} className="bg-secondary border-border" placeholder="Vallor Agência" />
                       </div>
-                    )}
-                  </div>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground block mb-1">Assunto do Email *</label>
+                        <Input value={form.assunto_email} onChange={e => setForm(f => ({ ...f, assunto_email: e.target.value }))} className="bg-secondary border-border" placeholder="Ex: Proposta especial para sua empresa" />
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-medium text-muted-foreground">Texto do Email</label>
+                          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+                            <input type="checkbox" checked={form.usar_ia_email} onChange={e => setForm(f => ({ ...f, usar_ia_email: e.target.checked }))}
+                              className="rounded border-border" />
+                            🤖 Gerar com IA
+                          </label>
+                        </div>
+                        {!form.usar_ia_email ? (
+                          <textarea value={form.texto_email} onChange={e => setForm(f => ({ ...f, texto_email: e.target.value }))} rows={4}
+                            className="w-full rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground resize-none"
+                            placeholder="Digite o HTML do email ou texto simples..." />
+                        ) : (
+                          <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                            <p className="text-xs text-muted-foreground">🤖 A IA gerará emails personalizados com base no nicho, produto e técnicas BRAT/SPIN para cada lead</p>
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground block mb-1">Anexar Imagens</label>
+                        <div className="flex items-center gap-2">
+                          <label className={cn("flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium cursor-pointer transition-colors",
+                            uploadingFiles ? "border-border bg-secondary text-muted-foreground" : "border-primary/30 bg-primary/5 text-primary hover:bg-primary/10")}>
+                            {uploadingFiles ? <Loader2 className="h-3 w-3 animate-spin" /> : <Paperclip className="h-3 w-3" />}
+                            {uploadingFiles ? "Enviando..." : "Escolher arquivos"}
+                            <input type="file" accept="image/*" multiple className="hidden" disabled={uploadingFiles}
+                              onChange={async (e) => {
+                                const files = e.target.files;
+                                if (!files || !user) return;
+                                setUploadingFiles(true);
+                                const newUrls: string[] = [];
+                                for (const file of Array.from(files)) {
+                                  const path = `${user.id}/${Date.now()}-${file.name}`;
+                                  const { error } = await supabase.storage.from("email-attachments").upload(path, file);
+                                  if (!error) {
+                                    const { data: urlData } = supabase.storage.from("email-attachments").getPublicUrl(path);
+                                    newUrls.push(urlData.publicUrl);
+                                  }
+                                }
+                                setAnexosUrls(prev => [...prev, ...newUrls]);
+                                setUploadingFiles(false);
+                              }} />
+                          </label>
+                          {anexosUrls.length > 0 && (
+                            <span className="text-xs text-muted-foreground">{anexosUrls.length} arquivo(s)</span>
+                          )}
+                        </div>
+                        {anexosUrls.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {anexosUrls.map((url, i) => (
+                              <span key={i} className="inline-flex items-center gap-1 text-xs bg-secondary px-2 py-1 rounded-md border border-border">
+                                📎 {url.split("/").pop()?.substring(0, 20)}
+                                <button onClick={() => setAnexosUrls(prev => prev.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-destructive">
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="p-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                        <p className="text-xs text-yellow-400 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Limite diário: 300 emails por conta Brevo</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* WhatsApp text config */}
+                  {form.tipo === "whatsapp" && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-muted-foreground block">Texto do disparo</label>
+                      <div className="flex gap-2">
+                        <button onClick={() => setForm(f => ({ ...f, usar_ia: false }))}
+                          className={cn("flex-1 py-2 rounded-lg border text-sm font-medium transition-colors",
+                            !form.usar_ia ? "border-primary bg-primary/20 text-primary" : "border-border bg-secondary text-muted-foreground")}>
+                          ✏️ Manual
+                        </button>
+                        <button onClick={() => setForm(f => ({ ...f, usar_ia: true }))}
+                          className={cn("flex-1 py-2 rounded-lg border text-sm font-medium transition-colors",
+                            form.usar_ia ? "border-primary bg-primary/20 text-primary" : "border-border bg-secondary text-muted-foreground")}>
+                          🤖 IA
+                        </button>
+                      </div>
+                      {!form.usar_ia ? (
+                        <textarea value={form.texto_manual} onChange={e => setForm(f => ({ ...f, texto_manual: e.target.value }))} rows={3}
+                          className="w-full rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground resize-none"
+                          placeholder="Digite o texto do disparo..." />
+                      ) : (
+                        <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                          <p className="text-xs text-muted-foreground">🤖 O agente IA gerará textos únicos baseados no nicho, descrição do negócio e técnicas BRAT/SPIN</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
 
@@ -513,12 +666,18 @@ export default function Campanhas() {
                   <div className="space-y-3">
                     {[
                       { label: "Nome", value: form.nome },
+                      { label: "Tipo", value: form.tipo === "email" ? "📧 Email" : "💬 WhatsApp" },
                       { label: "Nicho", value: form.nicho_filtro || "Todos" },
-                      { label: "Leads", value: `${Math.min(leadsCount, form.limite_leads)} com telefone` },
+                      { label: "Leads", value: `${Math.min(leadsCount, form.limite_leads)} com ${form.tipo === "email" ? "email" : "telefone"}` },
                       { label: "Intervalo", value: `${form.delay_min}s – ${form.delay_max}s` },
                       { label: "Limite/dia", value: `${form.limite_leads}` },
-                      { label: "Tipo", value: "WhatsApp" },
-                      { label: "Texto", value: form.usar_ia ? "Gerado por IA" : "Manual" },
+                      ...(form.tipo === "email" ? [
+                        { label: "Assunto", value: form.assunto_email || "(não definido)" },
+                        { label: "Texto", value: form.usar_ia_email ? "Gerado por IA" : "Manual" },
+                        { label: "Anexos", value: `${anexosUrls.length} arquivo(s)` },
+                      ] : [
+                        { label: "Texto", value: form.usar_ia ? "Gerado por IA" : "Manual" },
+                      ]),
                       { label: "Status", value: "RASCUNHO" },
                     ].map(({ label, value }) => (
                       <div key={label} className="flex items-center justify-between py-2 border-b border-border/50">
@@ -542,7 +701,7 @@ export default function Campanhas() {
                 <div className="flex-1" />
                 {wizardStep < 4 ? (
                   <Button onClick={() => setWizardStep((wizardStep + 1) as WizardStep)} className="gap-1 bg-primary text-primary-foreground"
-                    disabled={wizardStep === 1 && !form.nome.trim()}>
+                    disabled={(wizardStep === 1 && (!form.nome.trim() || !form.tipo)) || (wizardStep === 3 && form.tipo === "email" && !form.assunto_email.trim())}>
                     Próximo <ChevronRight className="h-4 w-4" />
                   </Button>
                 ) : (

@@ -171,6 +171,8 @@ export type Database = {
       }
       campaigns: {
         Row: {
+          anexos_urls: string[]
+          assunto_email: string
           cidade_filtro: string
           created_at: string
           delay_segundos: number
@@ -179,14 +181,20 @@ export type Database = {
           nicho_filtro: string
           nome: string
           quantidade_por_dia: number
+          remetente_email: string
+          remetente_nome: string
           status: string
+          texto_email: string
           tipo: string
           total_enviados: number
           total_leads: number
           updated_at: string
+          usar_ia_email: boolean
           user_id: string | null
         }
         Insert: {
+          anexos_urls?: string[]
+          assunto_email?: string
           cidade_filtro?: string
           created_at?: string
           delay_segundos?: number
@@ -195,14 +203,20 @@ export type Database = {
           nicho_filtro?: string
           nome?: string
           quantidade_por_dia?: number
+          remetente_email?: string
+          remetente_nome?: string
           status?: string
+          texto_email?: string
           tipo?: string
           total_enviados?: number
           total_leads?: number
           updated_at?: string
+          usar_ia_email?: boolean
           user_id?: string | null
         }
         Update: {
+          anexos_urls?: string[]
+          assunto_email?: string
           cidade_filtro?: string
           created_at?: string
           delay_segundos?: number
@@ -211,11 +225,15 @@ export type Database = {
           nicho_filtro?: string
           nome?: string
           quantidade_por_dia?: number
+          remetente_email?: string
+          remetente_nome?: string
           status?: string
+          texto_email?: string
           tipo?: string
           total_enviados?: number
           total_leads?: number
           updated_at?: string
+          usar_ia_email?: boolean
           user_id?: string | null
         }
         Relationships: []
