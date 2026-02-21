@@ -1,12 +1,12 @@
-import { useState, useEffect } from "react";
-import { Plus, Play, Pause, Send, MessageSquare, Users, Clock, Zap, X, ChevronDown } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Plus, Play, Pause, Send, MessageSquare, Users, Clock, Zap, X, ChevronDown, ChevronRight, ChevronLeft, Trash2, Loader2, AlertTriangle, Wifi, WifiOff, QrCode, Calendar, MessageCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { NICHOS } from "@/data/nichos";
+import { useAuth } from "@/contexts/AuthContext";
+import { SidebarTrigger } from "@/components/ui/sidebar";
+import { cn } from "@/lib/utils";
 
 interface Campaign {
   id: string;
@@ -33,126 +33,123 @@ interface CampaignMessage {
   pausado_por_humano: boolean;
 }
 
-type ModalStep = "filtros" | "config" | null;
+interface WhatsAppAccount {
+  id: string;
+  instance_id: string | null;
+  token: string | null;
+  numero: string | null;
+  status: string;
+}
 
-const ESTADOS = [
-  "AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG","MS","MT",
-  "PA","PB","PE","PI","PR","RJ","RN","RO","RR","RS","SC","SE","SP","TO"
-];
+const ESTADOS = ["AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG","MS","MT","PA","PB","PE","PI","PR","RJ","RN","RO","RR","RS","SC","SE","SP","TO"];
+type WizardStep = 1 | 2 | 3 | 4;
+type Tab = "campanhas" | "conversas" | "agenda";
 
 export default function Campanhas() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [messages, setMessages] = useState<CampaignMessage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modalStep, setModalStep] = useState<ModalStep>(null);
+  const [tab, setTab] = useState<Tab>("campanhas");
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState<WizardStep>(1);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [activeCampaignMessages, setActiveCampaignMessages] = useState<CampaignMessage[]>([]);
+  const [whatsappAccounts, setWhatsappAccounts] = useState<WhatsAppAccount[]>([]);
 
+  // Wizard form
   const [form, setForm] = useState({
     nome: "",
     nicho_filtro: "",
     cidade_filtro: "",
     estado_filtro: "",
-    delay_segundos: 120,
-    quantidade_por_dia: 30,
+    status_filtro: "",
+    delay_min: 30,
+    delay_max: 120,
+    limite_leads: 60,
+    texto_manual: "",
+    usar_ia: true,
   });
-
-  const [nichoBusca, setNichoBusca] = useState("");
+  const [leadsCount, setLeadsCount] = useState(0);
+  const [nichosFromLeads, setNichosFromLeads] = useState<string[]>([]);
   const [nichoOpen, setNichoOpen] = useState(false);
-  const nichosFiltrados = NICHOS.filter(n => n.toLowerCase().includes(nichoBusca.toLowerCase())).slice(0, 40);
 
-  useEffect(() => {
-    fetchCampaigns();
-  }, []);
+  useEffect(() => { fetchCampaigns(); fetchWhatsApp(); fetchNichos(); }, []);
+
+  async function fetchNichos() {
+    if (!user) return;
+    const { data } = await supabase.from("leads").select("nicho").eq("user_id", user.id);
+    if (data) setNichosFromLeads([...new Set(data.map(d => d.nicho))].filter(Boolean).sort());
+  }
+
+  async function fetchWhatsApp() {
+    if (!user) return;
+    const { data } = await supabase.from("whatsapp_accounts").select("id, instance_id, token, numero, status").eq("user_id", user.id);
+    if (data) setWhatsappAccounts(data);
+  }
 
   async function fetchCampaigns() {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("campaigns")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      toast({ title: "Erro ao carregar campanhas", variant: "destructive" });
-    } else {
-      setCampaigns(data || []);
-    }
+    const { data, error } = await supabase.from("campaigns").select("*").order("created_at", { ascending: false });
+    if (!error) setCampaigns(data || []);
     setLoading(false);
   }
 
   async function fetchCampaignMessages(campaignId: string) {
-    const { data } = await supabase
-      .from("campaign_messages")
-      .select("*")
-      .eq("campaign_id", campaignId)
-      .order("created_at", { ascending: false })
-      .limit(50);
+    const { data } = await supabase.from("campaign_messages").select("*").eq("campaign_id", campaignId).order("created_at", { ascending: false }).limit(50);
     setActiveCampaignMessages(data || []);
   }
 
+  // Count leads matching wizard filters
+  const countLeads = useCallback(async () => {
+    if (!user) return;
+    let q = supabase.from("leads").select("id", { count: "exact", head: true }).eq("user_id", user.id).not("whatsapp", "is", null);
+    if (form.nicho_filtro) q = q.ilike("nicho", `%${form.nicho_filtro}%`);
+    if (form.cidade_filtro) q = q.ilike("cidade", `%${form.cidade_filtro}%`);
+    if (form.estado_filtro) q = q.eq("estado", form.estado_filtro);
+    if (form.status_filtro) q = q.eq("status_funil", form.status_filtro);
+    const { count } = await q;
+    setLeadsCount(count || 0);
+  }, [user, form.nicho_filtro, form.cidade_filtro, form.estado_filtro, form.status_filtro]);
+
+  useEffect(() => { if (wizardStep === 2) countLeads(); }, [wizardStep, countLeads]);
+
   async function createCampaign() {
-    if (!form.nome.trim() || !form.nicho_filtro) {
-      toast({ title: "Preencha nome e nicho da campanha", variant: "destructive" });
-      return;
-    }
-    if (form.delay_segundos < 120 || form.delay_segundos > 300) {
-      toast({ title: "Delay deve ser entre 120s e 300s", variant: "destructive" });
-      return;
-    }
-
-    // Count matching leads
-    let query = supabase.from("leads").select("id", { count: "exact" });
-    if (form.nicho_filtro) query = query.ilike("nicho", `%${form.nicho_filtro}%`);
-    if (form.cidade_filtro) query = query.ilike("cidade", `%${form.cidade_filtro}%`);
-    if (form.estado_filtro) query = query.eq("estado", form.estado_filtro);
-
-    const { count } = await query;
-
+    if (!form.nome.trim()) return;
+    const delay = Math.max(form.delay_min, 30);
     const { data, error } = await supabase.from("campaigns").insert({
       nome: form.nome,
       nicho_filtro: form.nicho_filtro,
       cidade_filtro: form.cidade_filtro,
       estado_filtro: form.estado_filtro,
-      delay_segundos: form.delay_segundos,
-      quantidade_por_dia: form.quantidade_por_dia,
+      delay_segundos: delay,
+      quantidade_por_dia: form.limite_leads,
       status: "pausada",
-      total_leads: count || 0,
+      total_leads: Math.min(leadsCount, form.limite_leads),
     }).select().single();
+    if (error) { toast({ title: "Erro ao criar campanha", variant: "destructive" }); return; }
+    toast({ title: `Campanha "${form.nome}" criada com sucesso!` });
+    setCampaigns(prev => [data, ...prev]);
+    resetWizard();
+  }
 
-    if (error) {
-      toast({ title: "Erro ao criar campanha", variant: "destructive" });
-    } else {
-      toast({ title: `Campanha criada com ${count || 0} leads!` });
-      setCampaigns(prev => [data, ...prev]);
-      setModalStep(null);
-      setForm({ nome: "", nicho_filtro: "", cidade_filtro: "", estado_filtro: "", delay_segundos: 120, quantidade_por_dia: 30 });
-    }
+  function resetWizard() {
+    setWizardOpen(false); setWizardStep(1);
+    setForm({ nome: "", nicho_filtro: "", cidade_filtro: "", estado_filtro: "", status_filtro: "", delay_min: 30, delay_max: 120, limite_leads: 60, texto_manual: "", usar_ia: true });
   }
 
   async function toggleCampaign(campaign: Campaign) {
     if (campaign.status === "ativa") {
-      // Pause
       await supabase.from("campaigns").update({ status: "pausada" }).eq("id", campaign.id);
-      const { error } = await supabase.functions.invoke("campaign-engine", {
-        body: { action: "pause", campaign_id: campaign.id }
-      });
-      if (!error) {
-        toast({ title: "Campanha pausada" });
-        setCampaigns(prev => prev.map(c => c.id === campaign.id ? { ...c, status: "pausada" } : c));
-      }
+      await supabase.functions.invoke("campaign-engine", { body: { action: "pause", campaign_id: campaign.id } });
+      toast({ title: "Campanha pausada" });
+      setCampaigns(prev => prev.map(c => c.id === campaign.id ? { ...c, status: "pausada" } : c));
     } else {
-      // Start
-      const { error } = await supabase.functions.invoke("campaign-engine", {
-        body: { action: "start", campaign_id: campaign.id }
-      });
-      if (error) {
-        toast({ title: "Erro ao iniciar campanha. Verifique as credenciais Z-API.", variant: "destructive" });
-      } else {
-        await supabase.from("campaigns").update({ status: "ativa" }).eq("id", campaign.id);
-        toast({ title: "Campanha iniciada! Motor de envio ativado." });
-        setCampaigns(prev => prev.map(c => c.id === campaign.id ? { ...c, status: "ativa" } : c));
-      }
+      const { error } = await supabase.functions.invoke("campaign-engine", { body: { action: "start", campaign_id: campaign.id } });
+      if (error) { toast({ title: "Erro ao iniciar. Verifique Z-API.", variant: "destructive" }); return; }
+      await supabase.from("campaigns").update({ status: "ativa" }).eq("id", campaign.id);
+      toast({ title: "Campanha iniciada!" });
+      setCampaigns(prev => prev.map(c => c.id === campaign.id ? { ...c, status: "ativa" } : c));
     }
   }
 
@@ -162,360 +159,395 @@ export default function Campanhas() {
     toast({ title: "Campanha removida" });
   }
 
-  function openMessages(campaign: Campaign) {
-    setSelectedCampaign(campaign);
-    fetchCampaignMessages(campaign.id);
-  }
-
   const statusColor = (s: string) => ({
     ativa: "bg-green-500/20 text-green-400 border-green-500/30",
     pausada: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
     concluida: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  }[s] ?? "bg-muted text-muted-foreground");
+  }[s] ?? "bg-secondary text-muted-foreground border-border");
 
-  const msgStatusColor = (s: string) => ({
-    enviado: "text-green-400",
-    pendente: "text-yellow-400",
-    respondido: "text-blue-400",
-    pausado: "text-red-400",
-  }[s] ?? "text-muted-foreground");
+  const connectedCount = whatsappAccounts.filter(a => a.status === "conectado").length;
 
   return (
-    <div className="flex flex-col h-screen bg-background dark text-foreground overflow-hidden">
+    <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
       {/* Header */}
-      <div className="border-b border-border px-6 py-4 flex items-center justify-between shrink-0">
-        <div>
-          <h1 className="text-xl font-bold text-foreground">Campanhas e Disparos</h1>
-          <p className="text-sm text-muted-foreground">Motor de envio automático via WhatsApp</p>
+      <header className="h-14 flex items-center gap-3 px-4 border-b border-border bg-card shrink-0">
+        <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
+        <div className="h-5 w-px bg-border" />
+        <h1 className="text-sm font-semibold text-foreground">Campanhas</h1>
+        <div className="ml-auto">
+          <Button size="sm" onClick={() => setWizardOpen(true)} className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90">
+            <Plus className="h-4 w-4" /> Nova Campanha
+          </Button>
         </div>
-        <Button
-          onClick={() => { setModalStep("filtros"); }}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 gap-2"
-        >
-          <Plus className="h-4 w-4" />
-          Nova Campanha
-        </Button>
+      </header>
+
+      {/* WhatsApp status bar */}
+      <div className="px-4 py-3 border-b border-border bg-card/50">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground font-medium">Seus WhatsApps: <span className="text-foreground font-bold">LIMITE {connectedCount}/2</span> conectados</p>
+            <div className="flex items-center gap-3 mt-1.5">
+              {whatsappAccounts.length === 0 ? (
+                <span className="flex items-center gap-1.5 text-xs text-yellow-400">
+                  <WifiOff className="h-3 w-3" /> Nenhum agente conectado
+                </span>
+              ) : whatsappAccounts.map(acc => (
+                <span key={acc.id} className="flex items-center gap-1.5 text-xs">
+                  <span className={cn("h-2 w-2 rounded-full", acc.status === "conectado" ? "bg-green-400" : "bg-yellow-400")} />
+                  <span className={acc.status === "conectado" ? "text-green-400" : "text-yellow-400"}>
+                    Agente IA {acc.numero || "Aguardando QR"}
+                  </span>
+                </span>
+              ))}
+            </div>
+          </div>
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs border-border">
+            <QrCode className="h-3.5 w-3.5" /> Conectar WhatsApp via QR
+          </Button>
+        </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 px-6 py-4 shrink-0">
-        {[
-          { label: "Total Campanhas", value: campaigns.length, icon: Zap },
-          { label: "Ativas", value: campaigns.filter(c => c.status === "ativa").length, icon: Play },
-          { label: "Mensagens Enviadas", value: campaigns.reduce((a, c) => a + c.total_enviados, 0), icon: Send },
-          { label: "Leads Alcançados", value: campaigns.reduce((a, c) => a + c.total_leads, 0), icon: Users },
-        ].map(({ label, value, icon: Icon }) => (
-          <Card key={label} className="bg-card border-border">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Icon className="h-4 w-4 text-primary" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">{label}</p>
-                <p className="text-xl font-bold text-foreground">{value}</p>
-              </div>
-            </CardContent>
-          </Card>
+      {/* Tabs */}
+      <div className="flex items-center gap-1 px-4 pt-3 shrink-0">
+        {([
+          { id: "campanhas" as Tab, label: "Campanhas", icon: Zap },
+          { id: "conversas" as Tab, label: "Conversas Recentes", icon: MessageCircle },
+          { id: "agenda" as Tab, label: "Agenda", icon: Calendar },
+        ]).map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={cn("flex items-center gap-1.5 px-4 py-2 rounded-t-lg text-xs font-medium transition-colors border-b-2",
+              tab === t.id ? "text-primary border-primary bg-primary/10" : "text-muted-foreground border-transparent hover:text-foreground")}>
+            <t.icon className="h-3.5 w-3.5" /> {t.label}
+          </button>
         ))}
       </div>
 
-      {/* Campaigns List */}
-      <div className="flex-1 overflow-auto px-6 pb-6">
-        {loading ? (
-          <div className="flex items-center justify-center h-40">
-            <div className="text-muted-foreground animate-pulse">Carregando...</div>
-          </div>
-        ) : campaigns.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-40 gap-3">
-            <Zap className="h-12 w-12 text-muted-foreground/30" />
-            <p className="text-muted-foreground">Nenhuma campanha criada ainda</p>
-            <Button variant="outline" onClick={() => setModalStep("filtros")} className="gap-2">
-              <Plus className="h-4 w-4" /> Criar primeira campanha
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {campaigns.map(campaign => (
-              <Card key={campaign.id} className="bg-card border-border hover:border-primary/30 transition-colors">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4 flex-1 min-w-0">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-semibold text-foreground truncate">{campaign.nome}</h3>
-                          <span className={`text-xs px-2 py-0.5 rounded-full border ${statusColor(campaign.status)}`}>
-                            {campaign.status}
-                          </span>
+      {/* Content */}
+      <div className="flex-1 overflow-auto px-4 pb-6 pt-4">
+        {tab === "campanhas" && (
+          <>
+            {/* Stats */}
+            <div className="grid grid-cols-4 gap-3 mb-4">
+              {[
+                { label: "Total", value: campaigns.length, icon: Zap },
+                { label: "Ativas", value: campaigns.filter(c => c.status === "ativa").length, icon: Play },
+                { label: "Enviadas", value: campaigns.reduce((a, c) => a + c.total_enviados, 0), icon: Send },
+                { label: "Leads", value: campaigns.reduce((a, c) => a + c.total_leads, 0), icon: Users },
+              ].map(({ label, value, icon: Icon }) => (
+                <div key={label} className="flex items-center gap-3 p-3 rounded-xl border border-border bg-card">
+                  <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center"><Icon className="h-4 w-4 text-primary" /></div>
+                  <div><p className="text-xs text-muted-foreground">{label}</p><p className="text-xl font-bold text-foreground">{value}</p></div>
+                </div>
+              ))}
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center h-40"><Loader2 className="h-6 w-6 text-primary animate-spin" /></div>
+            ) : campaigns.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-40 gap-3">
+                <Zap className="h-12 w-12 text-muted-foreground/30" />
+                <p className="text-muted-foreground">Nenhuma campanha criada ainda</p>
+                <Button variant="outline" onClick={() => setWizardOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Criar primeira campanha</Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {campaigns.map(campaign => {
+                  const pct = campaign.total_leads > 0 ? Math.round((campaign.total_enviados / campaign.total_leads) * 100) : 0;
+                  return (
+                    <div key={campaign.id} className="p-4 rounded-xl border border-border bg-card hover:border-primary/30 transition-colors">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-semibold text-foreground truncate">{campaign.nome}</h3>
+                            <span className={cn("text-xs px-2 py-0.5 rounded-full border", statusColor(campaign.status))}>{campaign.status}</span>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                            <span>🎯 {campaign.nicho_filtro || "Todos"}</span>
+                            {campaign.cidade_filtro && <span>📍 {campaign.cidade_filtro}</span>}
+                            <span><Clock className="h-3 w-3 inline mr-0.5" />{campaign.delay_segundos}s</span>
+                            <span><Users className="h-3 w-3 inline mr-0.5" />{campaign.total_leads} leads</span>
+                            <span><Send className="h-3 w-3 inline mr-0.5" />{campaign.total_enviados} enviados</span>
+                          </div>
+                          {/* Progress bar */}
+                          <div className="mt-2 h-1.5 rounded-full bg-secondary overflow-hidden">
+                            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">{pct}% concluído</p>
                         </div>
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                          <span>🎯 {campaign.nicho_filtro || "Todos"}</span>
-                          {campaign.cidade_filtro && <span>📍 {campaign.cidade_filtro}</span>}
-                          {campaign.estado_filtro && <span>• {campaign.estado_filtro}</span>}
-                          <span><Clock className="h-3 w-3 inline mr-0.5" />{campaign.delay_segundos}s delay</span>
-                          <span><Users className="h-3 w-3 inline mr-0.5" />{campaign.total_leads} leads</span>
-                          <span><Send className="h-3 w-3 inline mr-0.5" />{campaign.total_enviados} enviados</span>
+                        <div className="flex items-center gap-2 shrink-0 ml-4">
+                          <Button size="sm" variant="outline" onClick={() => { setSelectedCampaign(campaign); fetchCampaignMessages(campaign.id); }} className="gap-1 h-8 border-border">
+                            <MessageSquare className="h-3 w-3" /> Msgs
+                          </Button>
+                          <Button size="sm" onClick={() => toggleCampaign(campaign)}
+                            className={campaign.status === "ativa"
+                              ? "bg-destructive/20 text-destructive hover:bg-destructive/30 border border-destructive/30 h-8 gap-1"
+                              : "bg-primary/20 text-primary hover:bg-primary/30 border border-primary/30 h-8 gap-1"}>
+                            {campaign.status === "ativa" ? <><Pause className="h-3 w-3" /> Pausar</> : <><Play className="h-3 w-3" /> Iniciar</>}
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => deleteCampaign(campaign.id)} className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive">
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => openMessages(campaign)}
-                        className="gap-1 h-8 border-border"
-                      >
-                        <MessageSquare className="h-3 w-3" />
-                        Msgs
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => toggleCampaign(campaign)}
-                      className={campaign.status === "ativa"
-                          ? "bg-destructive/20 text-destructive hover:bg-destructive/30 border border-destructive/30 h-8 gap-1"
-                          : "bg-primary/20 text-primary hover:bg-primary/30 border border-primary/30 h-8 gap-1"
-                        }
-                      >
-                        {campaign.status === "ativa" ? <><Pause className="h-3 w-3" /> Pausar</> : <><Play className="h-3 w-3" /> Iniciar</>}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => deleteCampaign(campaign.id)}
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {tab === "conversas" && (
+          <div className="flex flex-col items-center justify-center h-40 gap-3 text-center">
+            <MessageCircle className="h-12 w-12 text-muted-foreground/30" />
+            <p className="text-muted-foreground">Conversas recentes aparecerão aqui quando o agente estiver ativo</p>
+            <div className="flex gap-2">
+              {["Todas", "Ativo", "Receptivo", "Manual"].map(f => (
+                <button key={f} className="px-3 py-1.5 rounded-lg text-xs bg-secondary border border-border text-muted-foreground">{f}</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {tab === "agenda" && (
+          <div className="flex flex-col items-center justify-center h-40 gap-3 text-center">
+            <Calendar className="h-12 w-12 text-muted-foreground/30" />
+            <p className="text-foreground font-medium">Sua agenda está vazia</p>
+            <p className="text-muted-foreground text-sm">Reuniões agendadas pelo agente IA aparecerão aqui</p>
           </div>
         )}
       </div>
 
-      {/* === MODAL: Filtros === */}
-      {modalStep === "filtros" && (
+      {/* ── Wizard Modal ── */}
+      {wizardOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <Card className="bg-card border-border w-full max-w-md">
-            <CardHeader className="pb-4">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">Nova Campanha — Filtrar Leads</CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => setModalStep(null)}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-              <p className="text-sm text-muted-foreground">Selecione quais leads serão incluídos nesta campanha</p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-foreground block mb-1.5">Nome da Campanha *</label>
-                <Input
-                  placeholder="Ex: Dentistas Curitiba - Março"
-                  value={form.nome}
-                  onChange={e => setForm(f => ({ ...f, nome: e.target.value }))}
-                  className="bg-background border-border"
-                />
-              </div>
-
-              {/* Nicho dropdown */}
-              <div className="relative">
-                <label className="text-sm font-medium text-foreground block mb-1.5">Nicho *</label>
-                <div
-                  className="flex items-center justify-between h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm cursor-pointer"
-                  onClick={() => setNichoOpen(o => !o)}
-                >
-                  <span className={form.nicho_filtro ? "text-foreground" : "text-muted-foreground"}>
-                    {form.nicho_filtro || "Selecione o nicho..."}
-                  </span>
-                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          <div className="bg-card border border-border rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+            {/* Steps indicator */}
+            <div className="flex items-center px-6 pt-5 pb-3 gap-2">
+              {[1,2,3,4].map(s => (
+                <div key={s} className="flex items-center gap-2 flex-1">
+                  <div className={cn("h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold border transition-colors",
+                    wizardStep >= s ? "bg-primary text-primary-foreground border-primary" : "bg-secondary text-muted-foreground border-border")}>
+                    {s}
+                  </div>
+                  {s < 4 && <div className={cn("flex-1 h-0.5 rounded-full", wizardStep > s ? "bg-primary" : "bg-border")} />}
                 </div>
-                {nichoOpen && (
-                  <div className="absolute z-50 top-full mt-1 w-full bg-card border border-border rounded-md shadow-lg">
-                    <div className="p-2 border-b border-border">
-                      <Input
-                        placeholder="Buscar nicho..."
-                        value={nichoBusca}
-                        onChange={e => setNichoBusca(e.target.value)}
-                        className="h-8 bg-background border-border"
-                        autoFocus
-                      />
-                    </div>
-                    <div className="max-h-48 overflow-auto">
-                      <div
-                        className="px-3 py-2 text-sm hover:bg-accent cursor-pointer text-muted-foreground"
-                        onClick={() => { setForm(f => ({ ...f, nicho_filtro: "" })); setNichoOpen(false); setNichoBusca(""); }}
-                      >
-                        Todos os nichos
+              ))}
+            </div>
+
+            <div className="px-6 pb-6 space-y-4">
+              {/* Step 1: Nome */}
+              {wizardStep === 1 && (
+                <>
+                  <div>
+                    <h3 className="text-lg font-bold text-foreground">Nome da Campanha</h3>
+                    <p className="text-sm text-muted-foreground">Dê um nome descritivo para identificar sua campanha</p>
+                  </div>
+                  <Input placeholder='Ex: "Prospecção Dentistas SP"' value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} className="bg-secondary border-border" />
+                </>
+              )}
+
+              {/* Step 2: Leads */}
+              {wizardStep === 2 && (
+                <>
+                  <div>
+                    <h3 className="text-lg font-bold text-foreground">Seleção de Leads</h3>
+                    <p className="text-sm text-muted-foreground">Filtre os leads da Biblioteca para incluir na campanha</p>
+                  </div>
+
+                  <div className="relative">
+                    <button onClick={() => setNichoOpen(!nichoOpen)}
+                      className="flex items-center justify-between w-full h-10 rounded-md border border-border bg-secondary px-3 text-sm cursor-pointer">
+                      <span className={form.nicho_filtro ? "text-foreground" : "text-muted-foreground"}>{form.nicho_filtro || "Selecione o nicho..."}</span>
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                    {nichoOpen && (
+                      <div className="absolute z-50 top-full mt-1 w-full bg-card border border-border rounded-md shadow-lg max-h-48 overflow-auto">
+                        <div className="px-3 py-2 text-sm hover:bg-secondary cursor-pointer text-muted-foreground" onClick={() => { setForm(f => ({ ...f, nicho_filtro: "" })); setNichoOpen(false); }}>Todos os nichos</div>
+                        {nichosFromLeads.map(n => (
+                          <div key={n} className={cn("px-3 py-2 text-sm hover:bg-secondary cursor-pointer", form.nicho_filtro === n ? "bg-primary/10 text-primary" : "text-foreground")}
+                            onClick={() => { setForm(f => ({ ...f, nicho_filtro: n })); setNichoOpen(false); }}>{n}</div>
+                        ))}
                       </div>
-                      {nichosFiltrados.map(n => (
-                        <div
-                          key={n}
-                          className={`px-3 py-2 text-sm hover:bg-accent cursor-pointer ${form.nicho_filtro === n ? "bg-primary/10 text-primary" : "text-foreground"}`}
-                          onClick={() => { setForm(f => ({ ...f, nicho_filtro: n })); setNichoOpen(false); setNichoBusca(""); }}
-                        >
-                          {n}
-                        </div>
-                      ))}
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground block mb-1">Etapa do Funil</label>
+                      <select value={form.status_filtro} onChange={e => setForm(f => ({ ...f, status_filtro: e.target.value }))}
+                        className="w-full h-10 rounded-md border border-border bg-secondary px-3 text-sm text-foreground">
+                        <option value="">Todos</option>
+                        {["Novo","Contato","Negociando","Proposta","Ganho","Perdido"].map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground block mb-1">Estado</label>
+                      <select value={form.estado_filtro} onChange={e => setForm(f => ({ ...f, estado_filtro: e.target.value }))}
+                        className="w-full h-10 rounded-md border border-border bg-secondary px-3 text-sm text-foreground">
+                        <option value="">Todos</option>
+                        {ESTADOS.map(e => <option key={e} value={e}>{e}</option>)}
+                      </select>
                     </div>
                   </div>
+
+                  <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                    <p className="text-sm font-medium text-foreground">Leads encontrados <span className="text-primary font-bold">{leadsCount}</span> com telefone</p>
+                    <p className="text-xs text-muted-foreground mt-1">Leads selecionados: {Math.min(leadsCount, form.limite_leads)}/{form.limite_leads}</p>
+                  </div>
+
+                  <button onClick={() => setForm(f => ({ ...f, nicho_filtro: "", cidade_filtro: "", estado_filtro: "", status_filtro: "" }))}
+                    className="text-xs text-muted-foreground hover:text-foreground">🗑️ Limpar filtros</button>
+                </>
+              )}
+
+              {/* Step 3: Config */}
+              {wizardStep === 3 && (
+                <>
+                  <div>
+                    <h3 className="text-lg font-bold text-foreground">Configuração da Campanha</h3>
+                    <p className="text-sm text-muted-foreground">Defina intervalos e limites de envio</p>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground block mb-1.5">Intervalo entre mensagens</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-muted-foreground">Mín (s)</label>
+                        <Input type="number" min={30} max={300} value={form.delay_min} onChange={e => setForm(f => ({ ...f, delay_min: Number(e.target.value) }))} className="bg-secondary border-border" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">Máx (s)</label>
+                        <Input type="number" min={30} max={300} value={form.delay_max} onChange={e => setForm(f => ({ ...f, delay_max: Number(e.target.value) }))} className="bg-secondary border-border" />
+                      </div>
+                    </div>
+                    {form.delay_min < 120 && (
+                      <p className="text-xs text-yellow-400 flex items-center gap-1 mt-1"><AlertTriangle className="h-3 w-3" /> Intervalos curtos aumentam risco de ban</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground block mb-1.5">Limite de leads por dia (máx 60)</label>
+                    <Input type="number" min={1} max={60} value={form.limite_leads} onChange={e => setForm(f => ({ ...f, limite_leads: Math.min(60, Number(e.target.value)) }))} className="bg-secondary border-border w-28" />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground block">Texto do disparo</label>
+                    <div className="flex gap-2">
+                      <button onClick={() => setForm(f => ({ ...f, usar_ia: false }))}
+                        className={cn("flex-1 py-2 rounded-lg border text-sm font-medium transition-colors",
+                          !form.usar_ia ? "border-primary bg-primary/20 text-primary" : "border-border bg-secondary text-muted-foreground")}>
+                        ✏️ Manual
+                      </button>
+                      <button onClick={() => setForm(f => ({ ...f, usar_ia: true }))}
+                        className={cn("flex-1 py-2 rounded-lg border text-sm font-medium transition-colors",
+                          form.usar_ia ? "border-primary bg-primary/20 text-primary" : "border-border bg-secondary text-muted-foreground")}>
+                        🤖 IA
+                      </button>
+                    </div>
+                    {!form.usar_ia ? (
+                      <textarea value={form.texto_manual} onChange={e => setForm(f => ({ ...f, texto_manual: e.target.value }))} rows={3}
+                        className="w-full rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground resize-none"
+                        placeholder="Digite o texto do disparo..." />
+                    ) : (
+                      <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                        <p className="text-xs text-muted-foreground">🤖 O agente IA gerará textos únicos baseados no nicho, descrição do negócio e técnicas BRAT/SPIN</p>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* Step 4: Review */}
+              {wizardStep === 4 && (
+                <>
+                  <div>
+                    <h3 className="text-lg font-bold text-foreground">Revisão Geral</h3>
+                    <p className="text-sm text-muted-foreground">Confirme os dados antes de criar a campanha</p>
+                  </div>
+
+                  <div className="space-y-3">
+                    {[
+                      { label: "Nome", value: form.nome },
+                      { label: "Nicho", value: form.nicho_filtro || "Todos" },
+                      { label: "Leads", value: `${Math.min(leadsCount, form.limite_leads)} com telefone` },
+                      { label: "Intervalo", value: `${form.delay_min}s – ${form.delay_max}s` },
+                      { label: "Limite/dia", value: `${form.limite_leads}` },
+                      { label: "Tipo", value: "WhatsApp" },
+                      { label: "Texto", value: form.usar_ia ? "Gerado por IA" : "Manual" },
+                      { label: "Status", value: "RASCUNHO" },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="flex items-center justify-between py-2 border-b border-border/50">
+                        <span className="text-xs text-muted-foreground">{label}</span>
+                        <span className="text-sm font-medium text-foreground">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* Nav buttons */}
+              <div className="flex gap-2 pt-2">
+                {wizardStep > 1 ? (
+                  <Button variant="outline" onClick={() => setWizardStep((wizardStep - 1) as WizardStep)} className="gap-1 border-border">
+                    <ChevronLeft className="h-4 w-4" /> Voltar
+                  </Button>
+                ) : (
+                  <Button variant="outline" onClick={resetWizard} className="border-border">Cancelar</Button>
+                )}
+                <div className="flex-1" />
+                {wizardStep < 4 ? (
+                  <Button onClick={() => setWizardStep((wizardStep + 1) as WizardStep)} className="gap-1 bg-primary text-primary-foreground"
+                    disabled={wizardStep === 1 && !form.nome.trim()}>
+                    Próximo <ChevronRight className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button onClick={createCampaign} className="gap-1 bg-primary text-primary-foreground">
+                    <Zap className="h-4 w-4" /> Criar Campanha
+                  </Button>
                 )}
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm font-medium text-foreground block mb-1.5">Cidade</label>
-                  <Input
-                    placeholder="Ex: Curitiba"
-                    value={form.cidade_filtro}
-                    onChange={e => setForm(f => ({ ...f, cidade_filtro: e.target.value }))}
-                    className="bg-background border-border"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-foreground block mb-1.5">Estado</label>
-                  <select
-                    value={form.estado_filtro}
-                    onChange={e => setForm(f => ({ ...f, estado_filtro: e.target.value }))}
-                    className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
-                  >
-                    <option value="">Todos</option>
-                    {ESTADOS.map(e => <option key={e} value={e}>{e}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <Button className="w-full bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => setModalStep("config")}>
-                Próximo: Configurar Envio →
-              </Button>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* === MODAL: Config Envio === */}
-      {modalStep === "config" && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <Card className="bg-card border-border w-full max-w-md">
-            <CardHeader className="pb-4">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">Configurar Envio</CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => setModalStep("filtros")}>
-                  ← Voltar
-                </Button>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Campanha: <strong className="text-foreground">{form.nome}</strong> — Nicho: <strong className="text-foreground">{form.nicho_filtro || "Todos"}</strong>
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div>
-                <label className="text-sm font-medium text-foreground block mb-1.5">
-                  Delay entre mensagens <span className="text-muted-foreground">(mín. 120s — máx. 300s)</span>
-                </label>
-                <div className="flex items-center gap-3">
-                  <Input
-                    type="number"
-                    min={120}
-                    max={300}
-                    value={form.delay_segundos}
-                    onChange={e => setForm(f => ({ ...f, delay_segundos: Number(e.target.value) }))}
-                    className="bg-background border-border w-28"
-                  />
-                  <span className="text-sm text-muted-foreground">segundos</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${form.delay_segundos < 120 || form.delay_segundos > 300 ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"}`}>
-                    {form.delay_segundos < 120 ? "Muito baixo" : form.delay_segundos > 300 ? "Muito alto" : "✓ OK"}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">Delay aleatório para evitar bloqueios pelo WhatsApp</p>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-foreground block mb-1.5">
-                  Quantidade por dia
-                </label>
-                <div className="flex items-center gap-3">
-                  <Input
-                    type="number"
-                    min={1}
-                    max={200}
-                    value={form.quantidade_por_dia}
-                    onChange={e => setForm(f => ({ ...f, quantidade_por_dia: Number(e.target.value) }))}
-                    className="bg-background border-border w-28"
-                  />
-                  <span className="text-sm text-muted-foreground">mensagens/dia</span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">Recomendamos máx. 50/dia para contas novas</p>
-              </div>
-
-              <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
-                <p className="text-xs font-medium text-primary mb-2">🤖 Motor de IA Ativo</p>
-                <p className="text-xs text-muted-foreground">
-                  Cada mensagem será gerada individualmente pela IA usando o perfil do Agente configurado + nome da empresa do lead. Nenhuma mensagem será idêntica.
-                </p>
-              </div>
-
-              <Button
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 gap-2"
-                onClick={createCampaign}
-              >
-                <Zap className="h-4 w-4" />
-                Criar Campanha
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* === MODAL: Messages === */}
+      {/* Messages modal */}
       {selectedCampaign && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <Card className="bg-card border-border w-full max-w-2xl max-h-[80vh] flex flex-col">
-            <CardHeader className="pb-3 shrink-0">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-base">{selectedCampaign.nome}</CardTitle>
-                  <p className="text-xs text-muted-foreground mt-0.5">{activeCampaignMessages.length} mensagens</p>
-                </div>
-                <Button variant="ghost" size="sm" onClick={() => setSelectedCampaign(null)}>
-                  <X className="h-4 w-4" />
-                </Button>
+          <div className="bg-card border border-border rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+              <div>
+                <h3 className="font-semibold text-foreground">{selectedCampaign.nome}</h3>
+                <p className="text-xs text-muted-foreground">{activeCampaignMessages.length} mensagens</p>
               </div>
-            </CardHeader>
-            <CardContent className="flex-1 overflow-auto p-4 space-y-2">
+              <Button variant="ghost" size="sm" onClick={() => setSelectedCampaign(null)}><X className="h-4 w-4" /></Button>
+            </div>
+            <div className="flex-1 overflow-auto p-4 space-y-2">
               {activeCampaignMessages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-32 text-muted-foreground">
                   <MessageSquare className="h-8 w-8 mb-2 opacity-30" />
                   <p className="text-sm">Nenhuma mensagem enviada ainda</p>
                 </div>
-              ) : (
-                activeCampaignMessages.map(msg => (
-                  <div key={msg.id} className="bg-background rounded-lg p-3 border border-border">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className={`text-xs font-medium ${msgStatusColor(msg.status)}`}>
-                        ● {msg.status.charAt(0).toUpperCase() + msg.status.slice(1)}
-                      </span>
-                      {msg.enviado_em && (
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(msg.enviado_em).toLocaleString("pt-BR")}
-                        </span>
-                      )}
-                      {msg.pausado_por_humano && (
-                        <span className="text-xs bg-destructive/20 text-destructive px-1.5 py-0.5 rounded">⚠ Pausado (resposta humana)</span>
-                      )}
-                    </div>
-                    <p className="text-sm text-foreground">{msg.mensagem}</p>
-                    {msg.resposta && (
-                      <div className="mt-2 pt-2 border-t border-border">
-                        <p className="text-xs text-muted-foreground mb-1">Resposta do lead:</p>
-                        <p className="text-sm text-primary">{msg.resposta}</p>
-                      </div>
-                    )}
+              ) : activeCampaignMessages.map(msg => (
+                <div key={msg.id} className="bg-secondary rounded-lg p-3 border border-border">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={cn("text-xs font-medium", msg.status === "enviado" ? "text-green-400" : msg.status === "respondido" ? "text-blue-400" : "text-yellow-400")}>
+                      ● {msg.status}
+                    </span>
+                    {msg.enviado_em && <span className="text-xs text-muted-foreground">{new Date(msg.enviado_em).toLocaleString("pt-BR")}</span>}
                   </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
+                  <p className="text-sm text-foreground">{msg.mensagem}</p>
+                  {msg.resposta && (
+                    <div className="mt-2 pt-2 border-t border-border">
+                      <p className="text-xs text-muted-foreground mb-1">Resposta:</p>
+                      <p className="text-sm text-primary">{msg.resposta}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>
