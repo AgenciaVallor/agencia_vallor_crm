@@ -235,7 +235,7 @@ export default function DashboardPage() {
         <div className="rounded-xl border border-border bg-card card-glow-blue overflow-hidden">
           <div className="flex items-center gap-2 px-5 py-3.5 border-b border-border">
             <Zap className="h-4 w-4 text-primary" />
-            <h2 className="font-semibold text-foreground text-sm">Configurar Captura — Google + OSM</h2>
+            <h2 className="font-semibold text-foreground text-sm">Configurar Captura — Google Maps</h2>
           </div>
 
           <div className="p-5">
