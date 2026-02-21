@@ -6,6 +6,7 @@ import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { NICHOS } from "@/data/nichos";
 import { SearchableDropdown } from "@/components/SearchableDropdown";
+import WhatsAppConnect from "@/components/WhatsAppConnect";
 
 interface AgenteConfig {
   id?: string;
@@ -199,6 +200,9 @@ export default function AgenteIAPage() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-3xl mx-auto w-full">
+
+        {/* ── SEÇÃO 0: WhatsApp Connect ── */}
+        <WhatsAppConnect />
 
         {/* ── SEÇÃO 1: Identidade ── */}
         <section className="rounded-xl border border-border bg-card card-glow-blue p-5 space-y-4">
