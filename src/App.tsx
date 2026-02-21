@@ -14,6 +14,7 @@ import Campanhas from "./pages/Campanhas";
 import Perfil from "./pages/Perfil";
 import Admin from "./pages/Admin";
 import Auth from "./pages/Auth";
+import ResetPassword from "./pages/ResetPassword";
 import Biblioteca from "./pages/Biblioteca";
 import CRM from "./pages/CRM";
 import Insights from "./pages/Insights";
@@ -44,6 +45,7 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/auth" element={<Auth />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             {/* Rotas protegidas — qualquer usuário logado */}
             <Route path="/" element={<AuthGuard><Layout><Dashboard /></Layout></AuthGuard>} />
             <Route path="/agente" element={<AuthGuard><Layout><AgenteIA /></Layout></AuthGuard>} />
