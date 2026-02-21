@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Play, Pause, Send, MessageSquare, Users, Clock, Zap, X, ChevronDown, ChevronRight, ChevronLeft, Trash2, Loader2, AlertTriangle, Calendar, MessageCircle } from "lucide-react";
+import { Plus, Play, Pause, Send, MessageSquare, Users, Clock, Zap, X, ChevronRight, ChevronLeft, Trash2, Loader2, AlertTriangle, Calendar, MessageCircle } from "lucide-react";
+import { SearchableDropdown } from "@/components/SearchableDropdown";
+import { NICHOS } from "@/data/nichos";
 import WhatsAppConnect from "@/components/WhatsAppConnect";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -65,16 +67,7 @@ export default function Campanhas() {
     usar_ia: true,
   });
   const [leadsCount, setLeadsCount] = useState(0);
-  const [nichosFromLeads, setNichosFromLeads] = useState<string[]>([]);
-  const [nichoOpen, setNichoOpen] = useState(false);
-
-  useEffect(() => { fetchCampaigns(); fetchNichos(); }, []);
-
-  async function fetchNichos() {
-    if (!user) return;
-    const { data } = await supabase.from("leads").select("nicho").eq("user_id", user.id);
-    if (data) setNichosFromLeads([...new Set(data.map(d => d.nicho))].filter(Boolean).sort());
-  }
+  useEffect(() => { fetchCampaigns(); }, []);
 
 
   async function fetchCampaigns() {
@@ -323,21 +316,14 @@ export default function Campanhas() {
                     <p className="text-sm text-muted-foreground">Filtre os leads da Biblioteca para incluir na campanha</p>
                   </div>
 
-                  <div className="relative">
-                    <button onClick={() => setNichoOpen(!nichoOpen)}
-                      className="flex items-center justify-between w-full h-10 rounded-md border border-border bg-secondary px-3 text-sm cursor-pointer">
-                      <span className={form.nicho_filtro ? "text-foreground" : "text-muted-foreground"}>{form.nicho_filtro || "Selecione o nicho..."}</span>
-                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                    </button>
-                    {nichoOpen && (
-                      <div className="absolute z-50 top-full mt-1 w-full bg-card border border-border rounded-md shadow-lg max-h-48 overflow-auto">
-                        <div className="px-3 py-2 text-sm hover:bg-secondary cursor-pointer text-muted-foreground" onClick={() => { setForm(f => ({ ...f, nicho_filtro: "" })); setNichoOpen(false); }}>Todos os nichos</div>
-                        {nichosFromLeads.map(n => (
-                          <div key={n} className={cn("px-3 py-2 text-sm hover:bg-secondary cursor-pointer", form.nicho_filtro === n ? "bg-primary/10 text-primary" : "text-foreground")}
-                            onClick={() => { setForm(f => ({ ...f, nicho_filtro: n })); setNichoOpen(false); }}>{n}</div>
-                        ))}
-                      </div>
-                    )}
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground block mb-1">Nicho / Palavra-chave *</label>
+                    <SearchableDropdown
+                      options={NICHOS}
+                      value={form.nicho_filtro}
+                      onChange={(v) => setForm(f => ({ ...f, nicho_filtro: v }))}
+                      placeholder="Ex: Restaurantes, Dentistas..."
+                    />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
