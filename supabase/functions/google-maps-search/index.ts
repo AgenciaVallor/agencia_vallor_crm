@@ -100,34 +100,7 @@ async function searchGoogle(nicho: string, cidade: string, estado: string, qty: 
   return { leads: allLeads };
 }
 
-// ─── SOURCE 2: HERE Places API ───
-async function searchHERE(nicho: string, cidade: string, estado: string, qty: number, apiKey: string): Promise<{ leads: Lead[]; error?: string }> {
-  const coords = COORDS[estado] ?? COORDS.DF;
-  const q = `${nicho} ${cidade} ${estado}`;
-  const url = `https://browse.search.hereapi.com/v1/browse?q=${encodeURIComponent(q)}&at=${coords.lat},${coords.lng}&limit=${Math.min(qty, 100)}&apiKey=${apiKey}`;
-
-  const res = await fetch(url);
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error('HERE API error:', res.status, errText);
-    return { leads: [], error: `HERE retornou ${res.status}` };
-  }
-
-  const data = await res.json();
-  const leads: Lead[] = (data.items ?? []).map((item: any) => {
-    const phone = cleanPhone(item.contacts?.[0]?.phone?.[0]?.value);
-    const website = item.contacts?.[0]?.www?.[0]?.value ?? null;
-    const whatsapp = inferWhatsapp(phone);
-    return {
-      nome_empresa: item.title ?? 'Sem nome', nicho, cidade, estado,
-      telefone: phone, whatsapp, email: null, site: website,
-      fonte: 'HERE', status_funil: 'Novo', temperatura: classifyTemp(whatsapp, null, website),
-    };
-  });
-  return { leads };
-}
-
-// ─── SOURCE 3: OpenStreetMap / Overpass ───
+// ─── SOURCE 2: OpenStreetMap / Overpass ───
 async function searchOverpass(nicho: string, cidade: string, estado: string, qty: number): Promise<{ leads: Lead[]; error?: string }> {
   const nichoLower = nicho.toLowerCase();
   let osmFilter = `"name"~"${nicho}",i`;
@@ -237,25 +210,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 2) HERE fallback
-    if (leads.length === 0) {
-      const hereKey = Deno.env.get('HERE_API_KEY');
-      if (hereKey) {
-        logs.push('Tentando HERE Places (fallback 1)...');
-        console.log('Tentando HERE Places...');
-        const r = await searchHERE(sNicho, sCidade, sEstado, qty, hereKey);
-        if (r.leads.length > 0) {
-          leads = r.leads; fonte = 'HERE';
-          logs.push(`HERE retornou ${leads.length} resultados.`);
-          console.log(`HERE retornou ${leads.length} leads`);
-        } else {
-          logs.push(`HERE falhou: ${r.error ?? 'Sem resultados'}`);
-          console.log(`HERE falhou: ${r.error}`);
-        }
-      }
-    }
-
-    // 3) OSM fallback
+    // 2) OSM fallback
     if (leads.length === 0) {
       logs.push('Tentando OpenStreetMap/Overpass (fallback 2)...');
       console.log('Tentando Overpass...');
