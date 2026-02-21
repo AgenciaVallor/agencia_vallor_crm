@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Search, Upload, Download, Copy, Trash2, Globe, GlobeLock,
   MessageCircle, Mail, ExternalLink, ChevronDown, X, Building2,
-  MapPin, Phone, Loader2, Edit2, Save, User, Flame,
+  MapPin, Phone, Loader2, Edit2, Save, User, Flame, Zap,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -218,11 +218,19 @@ function LeadDrawer({ lead, onClose, onDelete, onEdit }: {
                   <Mail className="h-4 w-4" /> Email
                 </a>
               )}
+              {lead.site && (
+                <a href={lead.site.startsWith("http") ? lead.site : `https://${lead.site}`} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 text-sm font-medium transition-colors border border-purple-500/30">
+                  <Globe className="h-4 w-4" /> Site
+                </a>
+              )}
               {lead.telefone && (
                 <a href={`tel:${lead.telefone}`} className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-slate-600/30 hover:bg-slate-600/50 text-slate-300 text-sm font-medium transition-colors border border-slate-500/30">
                   <Phone className="h-4 w-4" /> Ligar
                 </a>
               )}
+              <button className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/40 text-amber-300 text-sm font-medium transition-colors border border-amber-500/30">
+                <Zap className="h-4 w-4" /> Enviar p/ Clarisse
+              </button>
               <button onClick={() => { onDelete(lead.id); onClose(); }} className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-red-600/20 hover:bg-red-600/40 text-red-400 text-sm font-medium transition-colors border border-red-500/30">
                 <Trash2 className="h-4 w-4" /> Excluir
               </button>

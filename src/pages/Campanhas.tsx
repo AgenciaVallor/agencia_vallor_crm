@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Play, Pause, Send, MessageSquare, Users, Clock, Zap, X, ChevronRight, ChevronLeft, Trash2, Loader2, AlertTriangle, Calendar, MessageCircle } from "lucide-react";
+import { Plus, Play, Pause, Send, MessageSquare, Users, Clock, Zap, X, ChevronRight, ChevronLeft, Trash2, Loader2, AlertTriangle, Calendar, MessageCircle, CheckCircle, XCircle, User } from "lucide-react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { SearchableDropdown } from "@/components/SearchableDropdown";
 import { NICHOS } from "@/data/nichos";
 import WhatsAppConnect from "@/components/WhatsAppConnect";
@@ -40,6 +42,98 @@ interface CampaignMessage {
 const ESTADOS = ["AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG","MS","MT","PA","PB","PE","PI","PR","RJ","RN","RO","RR","RS","SC","SE","SP","TO"];
 type WizardStep = 1 | 2 | 3 | 4;
 type Tab = "campanhas" | "conversas" | "agenda";
+
+interface Agendamento {
+  id: string;
+  data_hora: string;
+  email_lead: string;
+  titulo: string;
+  descricao: string | null;
+  status: string;
+  leads?: { nome_empresa: string; nicho: string } | null;
+}
+
+function AgendaTab() {
+  const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("agendamentos")
+        .select("*, leads(nome_empresa, nicho)")
+        .order("data_hora", { ascending: true });
+      setAgendamentos((data as any) || []);
+      setLoading(false);
+    })();
+  }, []);
+
+  async function updateStatus(id: string, status: string) {
+    await supabase.from("agendamentos").update({ status }).eq("id", id);
+    setAgendamentos(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+  }
+
+  const statusStyle: Record<string, string> = {
+    agendado: "text-blue-400 bg-blue-400/10 border-blue-400/30",
+    confirmado: "text-emerald-400 bg-emerald-400/10 border-emerald-400/30",
+    cancelado: "text-red-400 bg-red-400/10 border-red-400/30",
+    realizado: "text-purple-400 bg-purple-400/10 border-purple-400/30",
+  };
+
+  if (loading) return <div className="flex items-center justify-center h-40"><Loader2 className="h-6 w-6 text-primary animate-spin" /></div>;
+
+  if (agendamentos.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-40 gap-3 text-center">
+        <Calendar className="h-12 w-12 text-muted-foreground/30" />
+        <p className="text-foreground font-medium">Sua agenda está vazia</p>
+        <p className="text-muted-foreground text-sm">Reuniões agendadas pelo agente IA aparecerão aqui</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {agendamentos.map(ag => (
+        <div key={ag.id} className="rounded-xl border border-border bg-card p-4 space-y-3">
+          <div className="flex items-start justify-between">
+            <div className="space-y-1">
+              <h3 className="font-semibold text-foreground text-sm">{ag.titulo}</h3>
+              {ag.leads && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <User className="h-3 w-3" /> {ag.leads.nome_empresa} — {ag.leads.nicho}
+                </p>
+              )}
+            </div>
+            <span className={cn("text-xs px-2 py-0.5 rounded-full border", statusStyle[ag.status] || "text-muted-foreground")}>{ag.status}</span>
+          </div>
+          <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {format(new Date(ag.data_hora), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
+            <span className="flex items-center gap-1"><MessageCircle className="h-3 w-3" /> {ag.email_lead}</span>
+          </div>
+          {ag.descricao && <p className="text-xs text-muted-foreground bg-secondary/30 rounded-lg p-2">{ag.descricao}</p>}
+          <div className="flex gap-2">
+            {ag.status === "agendado" && (
+              <>
+                <button onClick={() => updateStatus(ag.id, "confirmado")} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition">
+                  <CheckCircle className="h-3 w-3" /> Confirmar
+                </button>
+                <button onClick={() => updateStatus(ag.id, "cancelado")} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 transition">
+                  <XCircle className="h-3 w-3" /> Cancelar
+                </button>
+              </>
+            )}
+            {ag.status === "confirmado" && (
+              <button onClick={() => updateStatus(ag.id, "realizado")} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/30 hover:bg-purple-500/20 transition">
+                <CheckCircle className="h-3 w-3" /> Marcar como Realizado
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function Campanhas() {
   const { toast } = useToast();
@@ -271,11 +365,7 @@ export default function Campanhas() {
         )}
 
         {tab === "agenda" && (
-          <div className="flex flex-col items-center justify-center h-40 gap-3 text-center">
-            <Calendar className="h-12 w-12 text-muted-foreground/30" />
-            <p className="text-foreground font-medium">Sua agenda está vazia</p>
-            <p className="text-muted-foreground text-sm">Reuniões agendadas pelo agente IA aparecerão aqui</p>
-          </div>
+          <AgendaTab />
         )}
       </div>
 
