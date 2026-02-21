@@ -175,8 +175,12 @@ export default function Campanhas() {
     remetente_email: "",
   });
   const [leadsCount, setLeadsCount] = useState(0);
+  const [leadsPhoneCount, setLeadsPhoneCount] = useState(0);
+  const [leadsEmailCount, setLeadsEmailCount] = useState(0);
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [anexosUrls, setAnexosUrls] = useState<string[]>([]);
+  const [nichosFromDb, setNichosFromDb] = useState<string[]>([]);
+  const [filterEmailOnly, setFilterEmailOnly] = useState(false);
   useEffect(() => { fetchCampaigns(); }, []);
 
 
@@ -192,18 +196,47 @@ export default function Campanhas() {
     setActiveCampaignMessages(data || []);
   }
 
+  // Fetch distinct nichos from leads
+  useEffect(() => {
+    if (!user || !wizardOpen) return;
+    (async () => {
+      const { data } = await supabase.from("leads").select("nicho").eq("user_id", user.id);
+      if (data) {
+        const unique = [...new Set(data.map(d => d.nicho).filter(Boolean))].sort();
+        setNichosFromDb(unique);
+      }
+    })();
+  }, [user, wizardOpen]);
+
   // Count leads matching wizard filters
   const countLeads = useCallback(async () => {
     if (!user) return;
-    const contactField = form.tipo === "email" ? "email" : "whatsapp";
-    let q = supabase.from("leads").select("id", { count: "exact", head: true }).eq("user_id", user.id).not(contactField, "is", null);
-    if (form.nicho_filtro) q = q.ilike("nicho", `%${form.nicho_filtro}%`);
-    if (form.cidade_filtro) q = q.ilike("cidade", `%${form.cidade_filtro}%`);
-    if (form.estado_filtro) q = q.eq("estado", form.estado_filtro);
-    if (form.status_filtro) q = q.eq("status_funil", form.status_filtro);
-    const { count } = await q;
-    setLeadsCount(count || 0);
-  }, [user, form.tipo, form.nicho_filtro, form.cidade_filtro, form.estado_filtro, form.status_filtro]);
+
+    // Build base query filters
+    const buildQuery = (contactField: string) => {
+      let q = supabase.from("leads").select("id", { count: "exact", head: true }).eq("user_id", user.id).not(contactField, "is", null);
+      if (form.nicho_filtro) q = q.ilike("nicho", `%${form.nicho_filtro}%`);
+      if (form.cidade_filtro) q = q.ilike("cidade", `%${form.cidade_filtro}%`);
+      if (form.estado_filtro) q = q.eq("estado", form.estado_filtro);
+      if (form.status_filtro) q = q.eq("status_funil", form.status_filtro);
+      return q;
+    };
+
+    // Count with phone
+    const { count: phoneCount } = await buildQuery("whatsapp");
+    setLeadsPhoneCount(phoneCount || 0);
+
+    // Count with email
+    const { count: emailCount } = await buildQuery("email");
+    setLeadsEmailCount(emailCount || 0);
+
+    // Set main count based on type and filter
+    if (form.tipo === "email" || filterEmailOnly) {
+      setLeadsCount(emailCount || 0);
+    } else {
+      setLeadsCount(phoneCount || 0);
+    }
+  }, [user, form.tipo, form.nicho_filtro, form.cidade_filtro, form.estado_filtro, form.status_filtro, filterEmailOnly]);
 
   useEffect(() => { if (wizardStep === 2) countLeads(); }, [wizardStep, countLeads]);
 
@@ -471,13 +504,16 @@ export default function Campanhas() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground block mb-1">Nicho / Palavra-chave *</label>
+                    <label className="text-xs font-medium text-muted-foreground block mb-1">Nicho (da sua Biblioteca) *</label>
                     <SearchableDropdown
-                      options={NICHOS}
+                      options={nichosFromDb.length > 0 ? nichosFromDb : NICHOS}
                       value={form.nicho_filtro}
                       onChange={(v) => setForm(f => ({ ...f, nicho_filtro: v }))}
-                      placeholder="Ex: Restaurantes, Dentistas..."
+                      placeholder={nichosFromDb.length > 0 ? "Selecione um nicho dos seus leads..." : "Ex: Restaurantes, Dentistas..."}
                     />
+                    {nichosFromDb.length > 0 && (
+                      <p className="text-xs text-muted-foreground mt-1">{nichosFromDb.length} nichos encontrados na sua Biblioteca</p>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -499,12 +535,25 @@ export default function Campanhas() {
                     </div>
                   </div>
 
-                  <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
-                    <p className="text-sm font-medium text-foreground">Leads encontrados <span className="text-primary font-bold">{leadsCount}</span> com {form.tipo === "email" ? "email" : "telefone"}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Leads selecionados: {Math.min(leadsCount, form.limite_leads)}/{form.limite_leads}</p>
+                  {form.tipo === "whatsapp" && (
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                      <input type="checkbox" checked={filterEmailOnly} onChange={e => setFilterEmailOnly(e.target.checked)}
+                        className="rounded border-border" />
+                      📧 Mostrar apenas leads com email válido
+                    </label>
+                  )}
+
+                  <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 space-y-1">
+                    <p className="text-sm font-medium text-foreground">
+                      Leads encontrados: <span className="text-primary font-bold">{leadsCount}</span> com {form.tipo === "email" ? "email" : "telefone"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      📞 {leadsPhoneCount} com telefone &nbsp;|&nbsp; 📧 {leadsEmailCount} com email
+                    </p>
+                    <p className="text-xs text-muted-foreground">Leads selecionados: {Math.min(leadsCount, form.limite_leads)}/{form.limite_leads}</p>
                   </div>
 
-                  <button onClick={() => setForm(f => ({ ...f, nicho_filtro: "", cidade_filtro: "", estado_filtro: "", status_filtro: "" }))}
+                  <button onClick={() => { setForm(f => ({ ...f, nicho_filtro: "", cidade_filtro: "", estado_filtro: "", status_filtro: "" })); setFilterEmailOnly(false); }}
                     className="text-xs text-muted-foreground hover:text-foreground">🗑️ Limpar filtros</button>
                 </>
               )}
@@ -553,7 +602,12 @@ export default function Campanhas() {
                       </div>
                       <div>
                         <label className="text-xs font-medium text-muted-foreground block mb-1">Assunto do Email *</label>
-                        <Input value={form.assunto_email} onChange={e => setForm(f => ({ ...f, assunto_email: e.target.value }))} className="bg-secondary border-border" placeholder="Ex: Proposta especial para sua empresa" />
+                        <Input value={form.assunto_email} onChange={e => setForm(f => ({ ...f, assunto_email: e.target.value }))} className="bg-secondary border-border"
+                          placeholder={form.nicho_filtro ? `${form.nicho_filtro} em ${form.cidade_filtro || "sua cidade"}: Aumente seu faturamento em 30%` : "Ex: Proposta especial para sua empresa"} />
+                        {!form.assunto_email && form.nicho_filtro && (
+                          <button onClick={() => setForm(f => ({ ...f, assunto_email: `${form.nicho_filtro} em ${form.cidade_filtro || "sua cidade"}: Aumente seu faturamento em 30%` }))}
+                            className="text-xs text-primary mt-1 hover:underline">💡 Usar sugestão IA</button>
+                        )}
                       </div>
 
                       <div className="space-y-2">
@@ -570,8 +624,15 @@ export default function Campanhas() {
                             className="w-full rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground resize-none"
                             placeholder="Digite o HTML do email ou texto simples..." />
                         ) : (
-                          <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
-                            <p className="text-xs text-muted-foreground">🤖 A IA gerará emails personalizados com base no nicho, produto e técnicas BRAT/SPIN para cada lead</p>
+                          <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 space-y-2">
+                            <p className="text-xs font-medium text-primary">🤖 IA com estrutura AIDA será usada para cada lead:</p>
+                            <ul className="text-xs text-muted-foreground space-y-0.5 list-disc list-inside">
+                              <li><strong>Atenção:</strong> Assunto forte + dor imediata do nicho</li>
+                              <li><strong>Interesse:</strong> Conexão emocional com o negócio</li>
+                              <li><strong>Desejo:</strong> Benefícios (+clientes, +faturamento, automação)</li>
+                              <li><strong>Ação:</strong> CTA para agendar via WhatsApp ou Calendly</li>
+                            </ul>
+                            <p className="text-xs text-muted-foreground">Tom consultivo e humano. Inclui nome da empresa do lead.</p>
                           </div>
                         )}
                       </div>

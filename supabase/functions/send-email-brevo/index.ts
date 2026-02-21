@@ -136,8 +136,8 @@ Deno.serve(async (req) => {
         // Generate with AI if configured
         if (campaign.usar_ia_email && OPENAI_API_KEY) {
           try {
-            const systemPrompt = agente?.system_prompt || `Você é ${agente?.nome_agente || "Hunter"}, especialista em vendas.`;
-            const userPrompt = `Gere um email profissional curto de abordagem para a empresa "${lead.nome_empresa}" em ${lead.cidade}/${lead.estado}, nicho: ${lead.nicho}. Produto: ${agente?.descricao_produto || "nosso serviço"}. Use HTML simples. Máximo 5 parágrafos. Apenas o corpo do email.`;
+            const systemPrompt = agente?.system_prompt || `Você é ${agente?.nome_agente || "Hunter"}, copywriter especialista em email marketing B2B.`;
+            const userPrompt = `Gere um email persuasivo para a empresa "${lead.nome_empresa}" do nicho "${lead.nicho}" em ${lead.cidade}/${lead.estado}. Produto/Serviço: ${agente?.descricao_produto || "nosso serviço"}. Use a estrutura AIDA: Atenção (dor imediata do nicho), Interesse (conexão emocional com o negócio do lead), Desejo (benefícios: +clientes, +faturamento, automação), Ação (CTA forte: agendar reunião via WhatsApp ou link de agenda). Tom consultivo, humano, sem spam. Inclua o nome "${lead.nome_empresa}". Use HTML simples. Máximo 5 parágrafos. Apenas o corpo do email.`;
 
             const aiResp = await fetch("https://api.openai.com/v1/chat/completions", {
               method: "POST",
