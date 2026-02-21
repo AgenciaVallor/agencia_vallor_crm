@@ -15,7 +15,7 @@ interface WhatsAppAccount {
 const STATUS_COLORS: Record<string, { dot: string; label: string }> = {
   conectado: { dot: "bg-green-500", label: "Conectado" },
   desconectado: { dot: "bg-red-500", label: "Desconectado" },
-  aguardando: { dot: "bg-yellow-500", label: "Aguardando QR" },
+  aguardando: { dot: "bg-yellow-500 animate-pulse", label: "Aguardando QR" },
 };
 
 export default function WhatsAppConnect() {
@@ -28,19 +28,28 @@ export default function WhatsAppConnect() {
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const statusPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { toast } = useToast();
 
   const connectedCount = accounts.filter((a) => a.status === "conectado").length;
   const LIMIT = 2;
 
-  // Load accounts
   useEffect(() => {
     loadAccounts();
     return () => {
       stopPolling();
       stopCountdown();
+      stopStatusPoll();
     };
   }, []);
+
+  // Background status polling every 30s to keep bolinha in sync
+  useEffect(() => {
+    if (accounts.length > 0) {
+      startStatusPoll();
+    }
+    return () => stopStatusPoll();
+  }, [accounts.length]);
 
   async function loadAccounts() {
     try {
@@ -54,7 +63,13 @@ export default function WhatsAppConnect() {
         .order("created_at", { ascending: true });
 
       if (error) throw error;
-      setAccounts(data || []);
+      const accs = data || [];
+      setAccounts(accs);
+
+      // Sync status with Z-API on load
+      for (const acc of accs) {
+        await syncAccountStatus(acc);
+      }
     } catch (err) {
       console.error("Error loading WhatsApp accounts:", err);
     } finally {
@@ -62,18 +77,86 @@ export default function WhatsAppConnect() {
     }
   }
 
-  function stopPolling() {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
+  async function syncAccountStatus(acc: WhatsAppAccount) {
+    try {
+      const { data } = await supabase.functions.invoke("zapi-proxy", {
+        body: { action: "status", instance_id: acc.instance_id, token: acc.token },
+      });
+
+      const connected = data?.connected === true || data?.status === "connected" || data?.status === "conectado";
+
+      if (connected && acc.status !== "conectado") {
+        // Fetch phone number
+        let numero = acc.numero;
+        if (!numero) {
+          numero = await fetchPhoneNumber(acc);
+        }
+
+        await supabase
+          .from("whatsapp_accounts")
+          .update({ status: "conectado", connected_at: new Date().toISOString(), ...(numero ? { numero } : {}) })
+          .eq("id", acc.id);
+
+        setAccounts((prev) =>
+          prev.map((a) => a.id === acc.id ? { ...a, status: "conectado", numero: numero || a.numero } : a)
+        );
+      } else if (!connected && acc.status === "conectado") {
+        await supabase
+          .from("whatsapp_accounts")
+          .update({ status: "desconectado" })
+          .eq("id", acc.id);
+
+        setAccounts((prev) =>
+          prev.map((a) => a.id === acc.id ? { ...a, status: "desconectado" } : a)
+        );
+      }
+    } catch (err) {
+      console.error("Sync status error:", err);
     }
   }
 
-  function stopCountdown() {
-    if (countdownRef.current) {
-      clearInterval(countdownRef.current);
-      countdownRef.current = null;
+  async function fetchPhoneNumber(acc: WhatsAppAccount): Promise<string | null> {
+    try {
+      const { data } = await supabase.functions.invoke("zapi-proxy", {
+        body: { action: "get-phone", instance_id: acc.instance_id, token: acc.token },
+      });
+      return data?.phone || data?.numero || data?.value || null;
+    } catch {
+      return null;
     }
+  }
+
+  function stopPolling() {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  }
+
+  function stopCountdown() {
+    if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
+  }
+
+  function stopStatusPoll() {
+    if (statusPollRef.current) { clearInterval(statusPollRef.current); statusPollRef.current = null; }
+  }
+
+  function startStatusPoll() {
+    stopStatusPoll();
+    statusPollRef.current = setInterval(async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data } = await supabase
+        .from("whatsapp_accounts")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true });
+
+      if (data) {
+        for (const acc of data) {
+          await syncAccountStatus(acc);
+        }
+        setAccounts(data);
+      }
+    }, 30000);
   }
 
   const fetchQrCode = useCallback(async (accountId: string) => {
@@ -83,22 +166,17 @@ export default function WhatsAppConnect() {
     try {
       const account = accounts.find((a) => a.id === accountId);
       const { data, error } = await supabase.functions.invoke("zapi-proxy", {
-        body: {
-          action: "qr-code",
-          instance_id: account?.instance_id,
-          token: account?.token,
-        },
+        body: { action: "qr-code", instance_id: account?.instance_id, token: account?.token },
       });
 
       if (error) throw error;
 
-      // Z-API returns { value: "base64..." } or { qrcode: "base64..." }
       const qrValue = data?.value || data?.qrcode || data?.qr;
       if (qrValue) {
         const src = qrValue.startsWith("data:") ? qrValue : `data:image/png;base64,${qrValue}`;
         setQrImage(src);
         setCountdown(30);
-        startCountdown(accountId);
+        startCountdown();
         startPolling(accountId);
       } else {
         toast({ title: "QR Code indisponível", description: "Tente novamente em alguns segundos.", variant: "destructive" });
@@ -111,7 +189,7 @@ export default function WhatsAppConnect() {
     }
   }, [accounts, toast]);
 
-  function startCountdown(accountId: string) {
+  function startCountdown() {
     stopCountdown();
     let seconds = 30;
     countdownRef.current = setInterval(() => {
@@ -130,11 +208,7 @@ export default function WhatsAppConnect() {
       try {
         const account = accounts.find((a) => a.id === accountId);
         const { data } = await supabase.functions.invoke("zapi-proxy", {
-          body: {
-            action: "status",
-            instance_id: account?.instance_id,
-            token: account?.token,
-          },
+          body: { action: "status", instance_id: account?.instance_id, token: account?.token },
         });
 
         const connected = data?.connected === true || data?.status === "connected" || data?.status === "conectado";
@@ -145,16 +219,22 @@ export default function WhatsAppConnect() {
           setShowQrModal(false);
           setQrImage(null);
 
-          // Update DB
+          // Fetch phone number
+          let numero: string | null = null;
+          if (account) {
+            numero = await fetchPhoneNumber(account);
+          }
+
           await supabase
             .from("whatsapp_accounts")
             .update({
               status: "conectado",
               connected_at: new Date().toISOString(),
+              ...(numero ? { numero } : {}),
             })
             .eq("id", accountId);
 
-          toast({ title: "✅ WhatsApp conectado!", description: "O agente está pronto para operar." });
+          toast({ title: "✅ WhatsApp conectado!", description: numero ? `Número: ${numero}` : "O agente está pronto para operar." });
           loadAccounts();
         }
       } catch (err) {
@@ -169,10 +249,8 @@ export default function WhatsAppConnect() {
       return;
     }
 
-    // Use existing account or create new
     let account = accounts.find((a) => a.status !== "conectado");
     if (!account) {
-      // Create a new account entry
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
@@ -195,6 +273,22 @@ export default function WhatsAppConnect() {
     setActiveAccountId(account.id);
     setShowQrModal(true);
     fetchQrCode(account.id);
+  }
+
+  async function handleDisconnect(accountId: string) {
+    try {
+      await supabase
+        .from("whatsapp_accounts")
+        .update({ status: "desconectado", connected_at: null })
+        .eq("id", accountId);
+
+      setAccounts((prev) =>
+        prev.map((a) => a.id === accountId ? { ...a, status: "desconectado", connected_at: null } : a)
+      );
+      toast({ title: "WhatsApp desconectado" });
+    } catch (err) {
+      console.error("Disconnect error:", err);
+    }
   }
 
   function closeModal() {
@@ -248,15 +342,24 @@ export default function WhatsAppConnect() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">
                       {acc.status === "conectado"
-                        ? `Agente IA ${acc.numero || "(sem número)"}`
-                        : "Agente IA Aguardando QR"}
+                        ? `Agente IA ${acc.numero ? `(${acc.numero})` : ""}`
+                        : acc.status === "aguardando"
+                        ? "Agente IA — Aguardando QR"
+                        : "Agente IA — Desconectado"}
                     </p>
                     <p className="text-xs text-muted-foreground">{info.label}</p>
                   </div>
-                  {acc.status === "conectado" && (
-                    <Wifi className="h-4 w-4 text-green-500 shrink-0" />
-                  )}
-                  {acc.status !== "conectado" && (
+                  {acc.status === "conectado" ? (
+                    <div className="flex items-center gap-2">
+                      <Wifi className="h-4 w-4 text-green-500 shrink-0" />
+                      <button
+                        onClick={() => handleDisconnect(acc.id)}
+                        className="text-xs text-destructive hover:underline"
+                      >
+                        Desconectar
+                      </button>
+                    </div>
+                  ) : (
                     <WifiOff className="h-4 w-4 text-muted-foreground shrink-0" />
                   )}
                 </div>
@@ -302,11 +405,7 @@ export default function WhatsAppConnect() {
                   <p className="text-xs text-muted-foreground">Gerando QR Code...</p>
                 </div>
               ) : qrImage ? (
-                <img
-                  src={qrImage}
-                  alt="QR Code WhatsApp"
-                  className="w-56 h-56 rounded-lg"
-                />
+                <img src={qrImage} alt="QR Code WhatsApp" className="w-56 h-56 rounded-lg" />
               ) : (
                 <div className="flex flex-col items-center gap-2 text-muted-foreground">
                   <QrCode className="h-12 w-12 opacity-30" />
@@ -322,9 +421,7 @@ export default function WhatsAppConnect() {
                 <span className="text-xs text-muted-foreground">Aguardando leitura...</span>
               </div>
               {countdown > 0 && (
-                <span className="text-xs font-mono text-muted-foreground">
-                  Expira em {countdown}s
-                </span>
+                <span className="text-xs font-mono text-muted-foreground">Expira em {countdown}s</span>
               )}
             </div>
 
