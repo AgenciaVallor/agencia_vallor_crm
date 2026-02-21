@@ -506,10 +506,10 @@ export default function Campanhas() {
                   <div>
                     <label className="text-xs font-medium text-muted-foreground block mb-1">Nicho (da sua Biblioteca) *</label>
                     <SearchableDropdown
-                      options={nichosFromDb.length > 0 ? nichosFromDb : NICHOS}
+                      options={nichosFromDb}
                       value={form.nicho_filtro}
                       onChange={(v) => setForm(f => ({ ...f, nicho_filtro: v }))}
-                      placeholder={nichosFromDb.length > 0 ? "Selecione um nicho dos seus leads..." : "Ex: Restaurantes, Dentistas..."}
+                      placeholder={nichosFromDb.length > 0 ? "Selecione um nicho dos seus leads..." : "Nenhum nicho encontrado na Biblioteca"}
                     />
                     {nichosFromDb.length > 0 && (
                       <p className="text-xs text-muted-foreground mt-1">{nichosFromDb.length} nichos encontrados na sua Biblioteca</p>
