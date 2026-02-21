@@ -3,7 +3,7 @@ import { Plus, Play, Pause, Send, MessageSquare, Users, Clock, Zap, X, ChevronRi
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { SearchableDropdown } from "@/components/SearchableDropdown";
-import { NICHOS } from "@/data/nichos";
+
 import WhatsAppConnect from "@/components/WhatsAppConnect";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
