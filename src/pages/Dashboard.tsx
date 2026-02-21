@@ -234,116 +234,122 @@ export default function DashboardPage() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5">
-        {/* CAPTURE CONFIG */}
-        <div className="rounded-xl border border-border bg-card card-glow-blue overflow-hidden">
-          <div className="flex items-center gap-2 px-5 py-3.5 border-b border-border">
-            <Zap className="h-4 w-4 text-primary" />
-            <h2 className="font-semibold text-foreground text-sm">Configurar Captura — Google Maps</h2>
-          </div>
-
-          <div className="p-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Nicho / Palavra-chave</label>
-                <SearchableDropdown options={NICHOS} value={nicho} onChange={setNicho} placeholder="Ex: Dentista, Pet Shop..." />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Estado</label>
-                <SearchableDropdown
-                  options={estadoOpts}
-                  value={estadoSigla ? `${estadoSigla} - ${estadoNome}` : ""}
-                  onChange={(v) => { setEstadoSigla(v.split(" - ")[0]); setCidade(""); }}
-                  placeholder="Selecione o estado..."
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Cidade</label>
-                {estadoSigla && !sortear ? (
-                  <SearchableDropdown options={CIDADES_POR_ESTADO[estadoSigla] ?? []} value={cidade} onChange={setCidade} placeholder={`Selecione a cidade em ${estadoNome}...`} />
-                ) : (
-                  <input type="text" value={sortear ? "Será sorteada automaticamente" : ""} disabled
-                    placeholder={sortear ? "Será sorteada automaticamente" : "Selecione o estado primeiro..."}
-                    className="w-full px-3 py-2.5 rounded-lg bg-[hsl(var(--hunter-card-bg))] border border-[hsl(var(--hunter-border))] text-sm text-foreground placeholder:text-muted-foreground focus:outline-none transition-colors disabled:opacity-50" />
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Quantidade</label>
-                <div className="relative">
-                  <select value={quantidade} onChange={(e) => setQuantidade(Number(e.target.value))}
-                    className="w-full appearance-none px-3 py-2.5 rounded-lg bg-[hsl(var(--hunter-card-bg))] border border-[hsl(var(--hunter-border))] text-sm text-foreground focus:outline-none focus:border-[hsl(var(--hunter-blue)/0.6)] transition-colors pr-8">
-                    {QUANTIDADES.map((q) => (<option key={q} value={q}>{q} leads</option>))}
-                  </select>
-                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Modo de Captura</label>
-                <div className="relative">
-                  <select value={modo} onChange={(e) => setModo(e.target.value)}
-                    className="w-full appearance-none px-3 py-2.5 rounded-lg bg-[hsl(var(--hunter-card-bg))] border border-[hsl(var(--hunter-border))] text-sm text-foreground focus:outline-none focus:border-[hsl(var(--hunter-blue)/0.6)] transition-colors pr-8">
-                    {MODOS.map((m) => (<option key={m} value={m}>{m}</option>))}
-                  </select>
-                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide opacity-0 select-none">Ações</label>
-                <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                  <div onClick={() => setSortear(!sortear)}
-                    className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${sortear ? "bg-[hsl(var(--hunter-blue))] border-[hsl(var(--hunter-blue))]" : "border-[hsl(var(--hunter-border))] bg-[hsl(var(--hunter-card-bg))]"}`}>
-                    {sortear && <CheckCircle className="h-3 w-3 text-white" />}
-                  </div>
-                  <div className="flex items-center gap-1.5 text-sm text-foreground">
-                    <Shuffle className="h-3.5 w-3.5 text-muted-foreground" />
-                    Sortear localizações
-                  </div>
-                </label>
+        {/* CAPTURE + LOGS SIDE BY SIDE */}
+        <div className="flex flex-col lg:flex-row gap-4">
+          {/* CAPTURE CONFIG — 70% */}
+          <div className="lg:w-[70%] rounded-xl border border-border bg-card card-glow-blue overflow-hidden">
+            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-border">
+              <Zap className="h-4 w-4 text-primary" />
+              <div>
+                <h2 className="font-semibold text-foreground text-sm">Configurar Captura</h2>
+                <p className="text-xs text-muted-foreground">Defina os parâmetros de busca para capturar leads</p>
               </div>
             </div>
 
-            <div className="mt-6 flex justify-center">
-              <button onClick={capturing ? undefined : handleCapture} disabled={capturing}
-                className={`relative flex items-center gap-3 px-10 py-3.5 rounded-xl font-bold text-base text-white transition-all duration-200 select-none ${capturing ? "bg-[hsl(var(--hunter-orange-glow))] cursor-not-allowed opacity-80" : "bg-[hsl(var(--hunter-orange))] hover:bg-[hsl(var(--hunter-orange-glow))] hover:scale-105 active:scale-95 card-glow-orange btn-capture-active"}`}>
-                {capturing ? (<><Loader2 className="h-5 w-5 animate-spin" />Capturando leads...</>) : (<><Play className="h-5 w-5 fill-white" />Iniciar Captura</>)}
-              </button>
+            <div className="p-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Nicho / Palavra-chave</label>
+                  <SearchableDropdown options={NICHOS} value={nicho} onChange={setNicho} placeholder="Ex: Dentista, Pet Shop..." />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Estado</label>
+                  <SearchableDropdown
+                    options={estadoOpts}
+                    value={estadoSigla ? `${estadoSigla} - ${estadoNome}` : ""}
+                    onChange={(v) => { setEstadoSigla(v.split(" - ")[0]); setCidade(""); }}
+                    placeholder="Selecione o estado..."
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Cidade</label>
+                  {estadoSigla && !sortear ? (
+                    <SearchableDropdown options={CIDADES_POR_ESTADO[estadoSigla] ?? []} value={cidade} onChange={setCidade} placeholder={`Selecione a cidade em ${estadoNome}...`} />
+                  ) : (
+                    <input type="text" value={sortear ? "Será sorteada automaticamente" : ""} disabled
+                      placeholder={sortear ? "Será sorteada automaticamente" : "Selecione o estado primeiro..."}
+                      className="w-full px-3 py-2.5 rounded-lg bg-[hsl(var(--hunter-card-bg))] border border-[hsl(var(--hunter-border))] text-sm text-foreground placeholder:text-muted-foreground focus:outline-none transition-colors disabled:opacity-50" />
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Quantidade</label>
+                  <div className="relative">
+                    <select value={quantidade} onChange={(e) => setQuantidade(Number(e.target.value))}
+                      className="w-full appearance-none px-3 py-2.5 rounded-lg bg-[hsl(var(--hunter-card-bg))] border border-[hsl(var(--hunter-border))] text-sm text-foreground focus:outline-none focus:border-[hsl(var(--hunter-blue)/0.6)] transition-colors pr-8">
+                      {QUANTIDADES.map((q) => (<option key={q} value={q}>{q} leads</option>))}
+                    </select>
+                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Modo de Captura</label>
+                  <div className="relative">
+                    <select value={modo} onChange={(e) => setModo(e.target.value)}
+                      className="w-full appearance-none px-3 py-2.5 rounded-lg bg-[hsl(var(--hunter-card-bg))] border border-[hsl(var(--hunter-border))] text-sm text-foreground focus:outline-none focus:border-[hsl(var(--hunter-blue)/0.6)] transition-colors pr-8">
+                      {MODOS.map((m) => (<option key={m} value={m}>{m}</option>))}
+                    </select>
+                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide opacity-0 select-none">Ações</label>
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <div onClick={() => setSortear(!sortear)}
+                      className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${sortear ? "bg-[hsl(var(--hunter-blue))] border-[hsl(var(--hunter-blue))]" : "border-[hsl(var(--hunter-border))] bg-[hsl(var(--hunter-card-bg))]"}`}>
+                      {sortear && <CheckCircle className="h-3 w-3 text-white" />}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-sm text-foreground">
+                      <Shuffle className="h-3.5 w-3.5 text-muted-foreground" />
+                      Sortear localizações
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-center">
+                <button onClick={capturing ? undefined : handleCapture} disabled={capturing}
+                  className={`relative flex items-center gap-3 px-10 py-3.5 rounded-xl font-bold text-base text-white transition-all duration-200 select-none ${capturing ? "bg-[hsl(var(--hunter-orange-glow))] cursor-not-allowed opacity-80" : "bg-[hsl(var(--hunter-orange))] hover:bg-[hsl(var(--hunter-orange-glow))] hover:scale-105 active:scale-95 card-glow-orange btn-capture-active"}`}>
+                  {capturing ? (<><Loader2 className="h-5 w-5 animate-spin" />Capturando leads...</>) : (<><Play className="h-5 w-5 fill-white" />Iniciar Captura</>)}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* LOGS */}
-        <div className="rounded-xl border border-[hsl(var(--hunter-border))] bg-[hsl(220_26%_9%)] overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3.5 border-b border-[hsl(var(--hunter-border))]">
-            <div className="flex items-center gap-2">
+          {/* LOGS — 30% */}
+          <div className="lg:w-[30%] rounded-xl border border-[hsl(var(--hunter-border))] bg-[hsl(220_26%_9%)] overflow-hidden flex flex-col">
+            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-[hsl(var(--hunter-border))]">
               <TrendingUp className="h-4 w-4 text-[hsl(var(--hunter-blue))]" />
-              <h2 className="font-semibold text-foreground text-sm">Feed de Logs</h2>
+              <div>
+                <h2 className="font-semibold text-foreground text-sm">Feed de Logs</h2>
+                <p className="text-xs text-muted-foreground">Acompanhe o progresso da captura em tempo real</p>
+              </div>
             </div>
-            <span className="text-xs text-muted-foreground">Acompanhe o progresso da captura em tempo real</span>
-          </div>
-          <div className="h-52 overflow-y-auto bg-[hsl(220_26%_7%)] p-4 font-mono text-xs">
-            {logs.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center gap-2">
-                <div className="h-10 w-10 rounded-full bg-[hsl(var(--hunter-card-bg))] flex items-center justify-center">
-                  <Play className="h-4 w-4 text-muted-foreground" />
-                </div>
-                <p className="text-muted-foreground">Nenhum log ainda.</p>
-                <p className="text-muted-foreground/60 text-[11px]">Inicie uma captura para ver o progresso...</p>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                {logs.map((log) => (
-                  <div key={log.id} className="log-entry flex gap-2 items-start">
-                    <span className="text-muted-foreground/60 shrink-0">[{log.timestamp}]</span>
-                    <span className={getLogColor(log.type)}>{log.message}</span>
+            <div className="flex-1 min-h-[300px] lg:min-h-0 overflow-y-auto bg-[hsl(220_26%_7%)] p-4 font-mono text-xs">
+              {logs.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center gap-2">
+                  <div className="h-10 w-10 rounded-full bg-[hsl(var(--hunter-card-bg))] flex items-center justify-center">
+                    <Play className="h-4 w-4 text-muted-foreground" />
                   </div>
-                ))}
-                <div ref={logsEndRef} />
-              </div>
-            )}
+                  <p className="text-muted-foreground">Nenhum log ainda</p>
+                  <p className="text-muted-foreground/60 text-[11px]">Inicie uma captura para ver os logs</p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {logs.map((log) => (
+                    <div key={log.id} className="log-entry flex gap-2 items-start">
+                      <span className="text-muted-foreground/60 shrink-0">[{log.timestamp}]</span>
+                      <span className={getLogColor(log.type)}>{log.message}</span>
+                    </div>
+                  ))}
+                  <div ref={logsEndRef} />
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
