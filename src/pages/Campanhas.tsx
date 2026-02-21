@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Play, Pause, Send, MessageSquare, Users, Clock, Zap, X, ChevronDown, ChevronRight, ChevronLeft, Trash2, Loader2, AlertTriangle, Wifi, WifiOff, QrCode, Calendar, MessageCircle } from "lucide-react";
+import { Plus, Play, Pause, Send, MessageSquare, Users, Clock, Zap, X, ChevronDown, ChevronRight, ChevronLeft, Trash2, Loader2, AlertTriangle, Calendar, MessageCircle } from "lucide-react";
+import WhatsAppConnect from "@/components/WhatsAppConnect";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,13 +34,6 @@ interface CampaignMessage {
   pausado_por_humano: boolean;
 }
 
-interface WhatsAppAccount {
-  id: string;
-  instance_id: string | null;
-  token: string | null;
-  numero: string | null;
-  status: string;
-}
 
 const ESTADOS = ["AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG","MS","MT","PA","PB","PE","PI","PR","RJ","RN","RO","RR","RS","SC","SE","SP","TO"];
 type WizardStep = 1 | 2 | 3 | 4;
@@ -55,7 +49,7 @@ export default function Campanhas() {
   const [wizardStep, setWizardStep] = useState<WizardStep>(1);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [activeCampaignMessages, setActiveCampaignMessages] = useState<CampaignMessage[]>([]);
-  const [whatsappAccounts, setWhatsappAccounts] = useState<WhatsAppAccount[]>([]);
+  
 
   // Wizard form
   const [form, setForm] = useState({
@@ -74,7 +68,7 @@ export default function Campanhas() {
   const [nichosFromLeads, setNichosFromLeads] = useState<string[]>([]);
   const [nichoOpen, setNichoOpen] = useState(false);
 
-  useEffect(() => { fetchCampaigns(); fetchWhatsApp(); fetchNichos(); }, []);
+  useEffect(() => { fetchCampaigns(); fetchNichos(); }, []);
 
   async function fetchNichos() {
     if (!user) return;
@@ -82,11 +76,6 @@ export default function Campanhas() {
     if (data) setNichosFromLeads([...new Set(data.map(d => d.nicho))].filter(Boolean).sort());
   }
 
-  async function fetchWhatsApp() {
-    if (!user) return;
-    const { data } = await supabase.from("whatsapp_accounts").select("id, instance_id, token, numero, status").eq("user_id", user.id);
-    if (data) setWhatsappAccounts(data);
-  }
 
   async function fetchCampaigns() {
     setLoading(true);
@@ -165,7 +154,7 @@ export default function Campanhas() {
     concluida: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   }[s] ?? "bg-secondary text-muted-foreground border-border");
 
-  const connectedCount = whatsappAccounts.filter(a => a.status === "conectado").length;
+  
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
@@ -183,28 +172,7 @@ export default function Campanhas() {
 
       {/* WhatsApp status bar */}
       <div className="px-4 py-3 border-b border-border bg-card/50">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs text-muted-foreground font-medium">Seus WhatsApps: <span className="text-foreground font-bold">LIMITE {connectedCount}/2</span> conectados</p>
-            <div className="flex items-center gap-3 mt-1.5">
-              {whatsappAccounts.length === 0 ? (
-                <span className="flex items-center gap-1.5 text-xs text-yellow-400">
-                  <WifiOff className="h-3 w-3" /> Nenhum agente conectado
-                </span>
-              ) : whatsappAccounts.map(acc => (
-                <span key={acc.id} className="flex items-center gap-1.5 text-xs">
-                  <span className={cn("h-2 w-2 rounded-full", acc.status === "conectado" ? "bg-green-400" : "bg-yellow-400")} />
-                  <span className={acc.status === "conectado" ? "text-green-400" : "text-yellow-400"}>
-                    Agente IA {acc.numero || "Aguardando QR"}
-                  </span>
-                </span>
-              ))}
-            </div>
-          </div>
-          <Button size="sm" variant="outline" className="gap-1.5 text-xs border-border">
-            <QrCode className="h-3.5 w-3.5" /> Conectar WhatsApp via QR
-          </Button>
-        </div>
+        <WhatsAppConnect />
       </div>
 
       {/* Tabs */}
