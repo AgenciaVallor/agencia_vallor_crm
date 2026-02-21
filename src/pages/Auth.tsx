@@ -244,7 +244,7 @@ export default function AuthPage() {
         </div>
 
         <p className="text-center text-xs text-muted-foreground mt-6">
-          © 2025 CRM VALLOR · Todos os direitos reservados
+          © 2026 CRM VALLOR · Todos os direitos reservados
         </p>
       </div>
     </div>
