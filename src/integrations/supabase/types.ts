@@ -14,6 +14,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      agendamentos: {
+        Row: {
+          created_at: string
+          data_hora: string
+          descricao: string | null
+          email_lead: string
+          google_event_id: string | null
+          id: string
+          lead_id: string | null
+          status: string
+          titulo: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          data_hora: string
+          descricao?: string | null
+          email_lead?: string
+          google_event_id?: string | null
+          id?: string
+          lead_id?: string | null
+          status?: string
+          titulo?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          data_hora?: string
+          descricao?: string | null
+          email_lead?: string
+          google_event_id?: string | null
+          id?: string
+          lead_id?: string | null
+          status?: string
+          titulo?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agendamentos_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agente_config: {
         Row: {
           agressividade: number
