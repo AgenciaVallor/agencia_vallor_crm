@@ -9,3 +9,6 @@ verify_jwt = false
 [functions.google-maps-search]
 verify_jwt = false
 
+[functions.zapi-proxy]
+verify_jwt = false
+
