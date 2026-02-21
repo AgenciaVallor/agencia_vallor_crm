@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Play, Pause, Send, MessageSquare, Users, Clock, Zap, X, ChevronRight, ChevronLeft, Trash2, Loader2, AlertTriangle, Calendar, MessageCircle, Copy, Check } from "lucide-react";
+import { Plus, Play, Pause, Send, MessageSquare, Users, Clock, Zap, X, ChevronRight, ChevronLeft, Trash2, Loader2, AlertTriangle, Calendar, MessageCircle } from "lucide-react";
 import { SearchableDropdown } from "@/components/SearchableDropdown";
 import { NICHOS } from "@/data/nichos";
 import WhatsAppConnect from "@/components/WhatsAppConnect";
@@ -148,26 +148,6 @@ export default function Campanhas() {
   }[s] ?? "bg-secondary text-muted-foreground border-border");
 
   
-  const [copied, setCopied] = useState(false);
-  const webhookUrl = `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1/zapi-webhook`;
-
-  const copyWebhook = () => {
-    navigator.clipboard.writeText(webhookUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  function WebhookCallbackUrl() {
-    return (
-      <div className="flex items-center gap-2 text-xs">
-        <span className="text-muted-foreground font-medium shrink-0">Callback URL:</span>
-        <code className="flex-1 bg-secondary border border-border rounded px-2 py-1 text-foreground truncate select-all">{webhookUrl}</code>
-        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={copyWebhook}>
-          {copied ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}
-        </Button>
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
@@ -184,9 +164,8 @@ export default function Campanhas() {
       </header>
 
       {/* WhatsApp status bar */}
-      <div className="px-4 py-3 border-b border-border bg-card/50 space-y-2">
+      <div className="px-4 py-3 border-b border-border bg-card/50">
         <WhatsAppConnect />
-        <WebhookCallbackUrl />
       </div>
 
       {/* Tabs */}
