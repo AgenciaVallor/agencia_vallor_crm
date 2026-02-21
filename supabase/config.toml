@@ -15,3 +15,6 @@ verify_jwt = false
 [functions.google-calendar]
 verify_jwt = false
 
+[functions.send-email-brevo]
+verify_jwt = false
+

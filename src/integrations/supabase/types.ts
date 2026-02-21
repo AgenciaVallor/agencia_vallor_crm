@@ -180,6 +180,7 @@ export type Database = {
           nome: string
           quantidade_por_dia: number
           status: string
+          tipo: string
           total_enviados: number
           total_leads: number
           updated_at: string
@@ -195,6 +196,7 @@ export type Database = {
           nome?: string
           quantidade_por_dia?: number
           status?: string
+          tipo?: string
           total_enviados?: number
           total_leads?: number
           updated_at?: string
@@ -210,10 +212,68 @@ export type Database = {
           nome?: string
           quantidade_por_dia?: number
           status?: string
+          tipo?: string
           total_enviados?: number
           total_leads?: number
           updated_at?: string
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      email_campaign_stats: {
+        Row: {
+          created_at: string
+          data: string
+          id: string
+          total_enviados: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          data?: string
+          id?: string
+          total_enviados?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          data?: string
+          id?: string
+          total_enviados?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      email_logs: {
+        Row: {
+          assunto: string
+          campaign_id: string
+          created_at: string
+          enviado_em: string | null
+          id: string
+          lead_id: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          assunto?: string
+          campaign_id: string
+          created_at?: string
+          enviado_em?: string | null
+          id?: string
+          lead_id: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          assunto?: string
+          campaign_id?: string
+          created_at?: string
+          enviado_em?: string | null
+          id?: string
+          lead_id?: string
+          status?: string
+          user_id?: string
         }
         Relationships: []
       }
