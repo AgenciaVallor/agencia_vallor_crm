@@ -131,3 +131,12 @@
 .card-glow-orange {
   box-shadow: 0 0 0 1px hsl(263 68% 55% / 0.3), 0 4px 24px hsl(263 68% 55% / 0.15);
 }
+
+/* Slide-in animation for drawer */
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.animate-slide-in-right {
+  animation: slideInRight 0.25s ease-out;
+}
