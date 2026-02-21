@@ -49,6 +49,7 @@ interface Lead {
   nome_empresa: string; nicho: string; cidade: string; estado: string;
   telefone: string | null; whatsapp: string | null; email: string | null;
   site: string | null; fonte: string; status_funil: string; temperatura: string;
+  endereco: string | null; instagram: string | null; linkedin: string | null;
 }
 
 // ─── SOURCE 1: Google Places API (New) ───
@@ -71,7 +72,7 @@ async function searchGoogle(nicho: string, cidade: string, estado: string, qty: 
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': apiKey,
-        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,nextPageToken',
+        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.googleMapsUri,nextPageToken',
       },
       body: JSON.stringify(body),
     });
@@ -87,10 +88,12 @@ async function searchGoogle(nicho: string, cidade: string, estado: string, qty: 
       const phone = cleanPhone(place.nationalPhoneNumber ?? place.internationalPhoneNumber);
       const website = place.websiteUri ?? null;
       const whatsapp = inferWhatsapp(phone);
+      const endereco = place.formattedAddress ?? null;
       allLeads.push({
         nome_empresa: place.displayName?.text ?? 'Sem nome', nicho, cidade, estado,
         telefone: phone, whatsapp, email: null, site: website,
         fonte: 'Google', status_funil: 'Novo', temperatura: classifyTemp(whatsapp, null, website),
+        endereco, instagram: null, linkedin: null,
       });
     }
     pageToken = data.nextPageToken;
@@ -146,11 +149,13 @@ async function searchOverpass(nicho: string, cidade: string, estado: string, qty
     const phone = cleanPhone(tags.phone ?? tags['contact:phone']);
     const website = tags.website ?? tags['contact:website'] ?? null;
     const whatsapp = inferWhatsapp(phone);
+    const endereco = [tags['addr:street'], tags['addr:housenumber'], tags['addr:suburb']].filter(Boolean).join(', ') || null;
     return {
       nome_empresa: tags.name, nicho, cidade, estado,
       telefone: phone, whatsapp, email: tags.email ?? tags['contact:email'] ?? null,
       site: website, fonte: 'OpenStreetMap', status_funil: 'Novo',
       temperatura: classifyTemp(whatsapp, tags.email ?? null, website),
+      endereco, instagram: tags['contact:instagram'] ?? null, linkedin: null,
     };
   });
   return { leads };
