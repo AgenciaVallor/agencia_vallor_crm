@@ -18,7 +18,7 @@ export function SearchableDropdown({ options, value, onChange, placeholder, clas
 
   const filtered = options.filter((o) =>
     o.toLowerCase().includes(search.toLowerCase())
-  ).slice(0, 80);
+  );
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -67,7 +67,7 @@ export function SearchableDropdown({ options, value, onChange, placeholder, clas
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full rounded-lg border border-[hsl(var(--hunter-border))] bg-[hsl(220_26%_9%)] shadow-2xl overflow-hidden">
+        <div className="absolute z-[100] mt-1 w-full rounded-lg border border-[hsl(var(--hunter-border))] bg-[hsl(220_26%_9%)] shadow-2xl overflow-hidden" style={{ maxHeight: 'calc(100vh - 120px)' }}>
           <div className="p-2 border-b border-[hsl(var(--hunter-border))]">
             <div className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-[hsl(var(--hunter-card-bg))]">
               <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -81,7 +81,7 @@ export function SearchableDropdown({ options, value, onChange, placeholder, clas
               />
             </div>
           </div>
-          <div className="max-h-[60vh] overflow-y-auto">
+          <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 200px)' }}>
             {filtered.length === 0 ? (
               <div className="px-3 py-4 text-sm text-muted-foreground text-center">Nenhum resultado</div>
             ) : (
