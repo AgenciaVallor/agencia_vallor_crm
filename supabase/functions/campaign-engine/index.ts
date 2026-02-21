@@ -1,4 +1,3 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -6,23 +5,62 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-  );
-
-  const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-  const ZAPI_INSTANCE = Deno.env.get("ZAPI_INSTANCE") || Deno.env.get("ZAPI_INSTANCE_ID");
-  const ZAPI_TOKEN = Deno.env.get("ZAPI_TOKEN");
-
   try {
+    // ── Auth: validação JWT explícita ──
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Não autorizado" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    const userSupabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsErr } = await userSupabase.auth.getClaims(token);
+    if (claimsErr || !claimsData?.claims) {
+      return new Response(JSON.stringify({ error: "Token inválido" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    const userId = claimsData.claims.sub;
+
+    // Service role client for DB operations
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+    const ZAPI_INSTANCE = Deno.env.get("ZAPI_INSTANCE") || Deno.env.get("ZAPI_INSTANCE_ID");
+    const ZAPI_TOKEN = Deno.env.get("ZAPI_TOKEN");
+
     const { action, campaign_id } = await req.json();
 
+    // Verify campaign belongs to authenticated user
+    const { data: campaign, error: campErr } = await supabase
+      .from("campaigns")
+      .select("*")
+      .eq("id", campaign_id)
+      .eq("user_id", userId)
+      .single();
+
+    if (campErr || !campaign) {
+      return new Response(JSON.stringify({ error: "Campanha não encontrada ou sem permissão" }), {
+        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
     if (action === "pause") {
-      await supabase.from("campaigns").update({ status: "pausada" }).eq("id", campaign_id);
+      await supabase.from("campaigns").update({ status: "pausada" }).eq("id", campaign_id).eq("user_id", userId);
       return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -33,23 +71,10 @@ serve(async (req) => {
         });
       }
 
-      // Get campaign
-      const { data: campaign, error: campErr } = await supabase
-        .from("campaigns")
-        .select("*")
-        .eq("id", campaign_id)
-        .single();
+      // Get agente config for the user
+      const { data: agente } = await supabase.from("agente_config").select("*").eq("user_id", userId).limit(1).single();
 
-      if (campErr || !campaign) {
-        return new Response(JSON.stringify({ error: "Campanha não encontrada" }), {
-          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" }
-        });
-      }
-
-      // Get agente config
-      const { data: agente } = await supabase.from("agente_config").select("*").limit(1).single();
-
-      // Get leads not yet contacted by this campaign
+      // Get leads not yet contacted
       const { data: sentLeadIds } = await supabase
         .from("campaign_messages")
         .select("lead_id")
@@ -57,7 +82,7 @@ serve(async (req) => {
 
       const excludeIds = (sentLeadIds || []).map((r: any) => r.lead_id);
 
-      let query = supabase.from("leads").select("*");
+      let query = supabase.from("leads").select("*").eq("user_id", userId);
       if (campaign.nicho_filtro) query = query.ilike("nicho", `%${campaign.nicho_filtro}%`);
       if (campaign.cidade_filtro) query = query.ilike("cidade", `%${campaign.cidade_filtro}%`);
       if (campaign.estado_filtro) query = query.eq("estado", campaign.estado_filtro);
@@ -75,25 +100,21 @@ serve(async (req) => {
 
       await supabase.from("campaigns").update({ status: "ativa" }).eq("id", campaign_id);
 
-      // Start sending loop (background-ish using EdgeRuntime)
       const delayMs = campaign.delay_segundos * 1000;
 
-      // Process leads sequentially
       for (const lead of leads) {
-        // Check if still active
         const { data: currentCamp } = await supabase.from("campaigns").select("status").eq("id", campaign_id).single();
         if (currentCamp?.status !== "ativa") break;
 
         const phone = lead.whatsapp || lead.telefone;
         if (!phone) continue;
 
-        // Generate message via OpenAI GPT-4
         let mensagem = `Olá! Somos especialistas em ${agente?.nicho || "nosso segmento"} e gostaríamos de conversar com ${lead.nome_empresa}.`;
 
         if (OPENAI_API_KEY) {
           try {
             const systemPrompt = agente?.system_prompt || `Você é ${agente?.nome_agente || "Hunter"}, especialista em vendas.`;
-            const userPrompt = `Gere uma mensagem curta e natural de abordagem para a empresa "${lead.nome_empresa}" localizada em ${lead.cidade}/${lead.estado} sobre: ${agente?.descricao_produto || "nosso produto/serviço"}. Varie o cumprimento. Máximo 3 frases. Apenas o texto da mensagem, sem saudações genéricas.`;
+            const userPrompt = `Gere uma mensagem curta e natural de abordagem para a empresa "${lead.nome_empresa}" localizada em ${lead.cidade}/${lead.estado} sobre: ${agente?.descricao_produto || "nosso produto/serviço"}. Varie o cumprimento. Máximo 3 frases. Apenas o texto da mensagem.`;
 
             const aiResp = await fetch("https://api.openai.com/v1/chat/completions", {
               method: "POST",
@@ -114,23 +135,20 @@ serve(async (req) => {
             if (aiResp.ok) {
               const aiData = await aiResp.json();
               mensagem = aiData.choices?.[0]?.message?.content || mensagem;
-            } else {
-              console.error("OpenAI error:", await aiResp.text());
             }
           } catch (e) {
             console.error("AI error:", e);
           }
         }
 
-        // Insert message record
         const { data: msgRecord } = await supabase.from("campaign_messages").insert({
           campaign_id,
           lead_id: lead.id,
+          user_id: userId,
           mensagem,
           status: "pendente",
         }).select().single();
 
-        // Send via Z-API
         const cleanPhone = phone.replace(/\D/g, "");
         const fullPhone = cleanPhone.startsWith("55") ? cleanPhone : `55${cleanPhone}`;
 
@@ -162,7 +180,6 @@ serve(async (req) => {
           console.error("Z-API error:", e);
         }
 
-        // Wait delay (randomized ±10s)
         const jitter = (Math.random() * 20000) - 10000;
         await new Promise(r => setTimeout(r, delayMs + jitter));
       }
@@ -178,7 +195,7 @@ serve(async (req) => {
 
   } catch (e) {
     console.error("campaign-engine error:", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Erro interno" }), {
+    return new Response(JSON.stringify({ error: "Erro interno" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }
