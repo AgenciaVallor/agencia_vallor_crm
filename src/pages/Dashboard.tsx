@@ -261,18 +261,7 @@ export default function DashboardPage() {
 
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5">
 
-        {/* ── AVISO: chave API ── */}
-        <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 px-5 py-4 flex gap-3 items-start">
-          <AlertCircle className="h-5 w-5 text-yellow-400 shrink-0 mt-0.5" />
-          <div className="text-sm">
-            <p className="font-semibold text-yellow-300 mb-1">🗺️ Busca real via Google Maps — Configure sua chave API</p>
-            <p className="text-yellow-200/70 leading-relaxed">
-              Para buscar negócios reais, adicione o secret <code className="bg-yellow-500/20 px-1 rounded text-yellow-200">GOOGLE_MAPS_API_KEY</code> no painel de Secrets com uma chave do{" "}
-              <strong>Google Cloud Console</strong> com a <strong>Places API (New)</strong> habilitada.{" "}
-              Crie em: <span className="underline">console.cloud.google.com → APIs → Places API (New)</span>.
-            </p>
-          </div>
-        </div>
+
 
         {/* ── CAPTURE CONFIG CARD ── */}
         <div className="rounded-xl border border-border bg-card card-glow-blue overflow-hidden">
