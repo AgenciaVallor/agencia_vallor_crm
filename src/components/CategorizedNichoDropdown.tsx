@@ -116,17 +116,17 @@ export function CategorizedNichoDropdown({ value, onChange, placeholder = "Ex: R
                       </span>
                     </div>
                     {/* Items */}
-                    <div className="flex flex-wrap gap-1.5 px-3 py-2">
+                    <div className="flex flex-col py-1">
                       {items.map((item) => (
                         <button
                           key={item}
                           type="button"
                           onClick={() => handleSelect(item)}
                           className={cn(
-                            "px-2.5 py-1 rounded-md text-xs transition-colors",
+                            "w-full text-left px-4 py-1.5 text-sm transition-colors",
                             item === value
-                              ? "bg-[hsl(var(--hunter-blue))] text-white font-medium"
-                              : "bg-[hsl(var(--hunter-card-bg))] text-foreground/80 hover:bg-[hsl(var(--hunter-blue)/0.15)] hover:text-[hsl(var(--hunter-blue))]"
+                              ? "bg-[hsl(var(--hunter-blue)/0.2)] text-[hsl(var(--hunter-blue))] font-medium"
+                              : "text-foreground/80 hover:bg-[hsl(var(--hunter-blue)/0.1)] hover:text-[hsl(var(--hunter-blue))]"
                           )}
                         >
                           {item}
