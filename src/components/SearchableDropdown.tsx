@@ -81,7 +81,7 @@ export function SearchableDropdown({ options, value, onChange, placeholder, clas
               />
             </div>
           </div>
-          <div className="max-h-56 overflow-y-auto">
+          <div className="max-h-[60vh] overflow-y-auto">
             {filtered.length === 0 ? (
               <div className="px-3 py-4 text-sm text-muted-foreground text-center">Nenhum resultado</div>
             ) : (

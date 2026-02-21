@@ -244,6 +244,7 @@ export default function Campanhas() {
     if (!form.nome.trim() || !form.tipo) return;
     const delay = Math.max(form.delay_min, 30);
     const insertData: any = {
+      user_id: user?.id,
       nome: form.nome,
       tipo: form.tipo,
       nicho_filtro: form.nicho_filtro,
