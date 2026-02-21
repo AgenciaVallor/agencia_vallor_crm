@@ -19,6 +19,7 @@ interface AgenteConfig {
   objecoes: string[];
   argumentos: string[];
   system_prompt: string;
+  modo: "ativo" | "receptivo";
 }
 
 const DEFAULT_CONFIG: AgenteConfig = {
@@ -31,6 +32,7 @@ const DEFAULT_CONFIG: AgenteConfig = {
   objecoes: [],
   argumentos: [],
   system_prompt: "",
+  modo: "ativo",
 };
 
 function buildSystemPrompt(config: AgenteConfig): string {
@@ -102,6 +104,7 @@ export default function AgenteIAPage() {
           objecoes: data.objecoes || [],
           argumentos: data.argumentos || [],
           system_prompt: data.system_prompt,
+          modo: "ativo",
         });
       }
     } catch (err) {
@@ -203,6 +206,51 @@ export default function AgenteIAPage() {
 
         {/* ── SEÇÃO 0: WhatsApp Connect ── */}
         <WhatsAppConnect />
+
+        {/* ── MODO: Ativo / Receptivo ── */}
+        <section className="rounded-xl border border-border bg-card card-glow-blue p-5 space-y-4">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="h-7 w-7 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center">
+              <Zap className="h-4 w-4 text-primary" />
+            </div>
+            <h2 className="font-semibold text-foreground text-sm">Modo de Operação</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              onClick={() => setConfig(p => ({ ...p, modo: "ativo" }))}
+              className={`p-4 rounded-xl border text-left transition-all ${
+                config.modo === "ativo"
+                  ? "border-primary bg-primary/10"
+                  : "border-border bg-secondary/30 hover:border-primary/40"
+              }`}
+            >
+              <p className="text-sm font-bold text-foreground mb-1">🚀 Modo Ativo</p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Envia disparos de prospecção. <strong className="text-foreground">NÃO responde</strong> mensagens orgânicas recebidas.
+              </p>
+            </button>
+            <button
+              onClick={() => setConfig(p => ({ ...p, modo: "receptivo" }))}
+              className={`p-4 rounded-xl border text-left transition-all ${
+                config.modo === "receptivo"
+                  ? "border-primary bg-primary/10"
+                  : "border-border bg-secondary/30 hover:border-primary/40"
+              }`}
+            >
+              <p className="text-sm font-bold text-foreground mb-1">🎯 Modo Receptivo (SDR)</p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Responde leads com técnicas <strong className="text-foreground">BRAT + SPIN SELLING</strong>. Qualifica → agenda reunião via Google Agenda.
+              </p>
+            </button>
+          </div>
+          {config.modo === "receptivo" && (
+            <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+              <p className="text-xs text-muted-foreground">
+                📅 O agente pedirá o e-mail do lead → verificará horários (9h-18h seg-sex) → criará evento no Google Agenda → confirmará no WhatsApp.
+              </p>
+            </div>
+          )}
+        </section>
 
         {/* ── SEÇÃO 1: Identidade ── */}
         <section className="rounded-xl border border-border bg-card card-glow-blue p-5 space-y-4">
