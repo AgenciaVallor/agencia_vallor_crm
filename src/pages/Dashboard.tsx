@@ -6,6 +6,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { NICHOS } from "@/data/nichos";
+import { CategorizedNichoDropdown } from "@/components/CategorizedNichoDropdown";
 import { ESTADOS } from "@/data/estados";
 import { CIDADES_POR_ESTADO } from "@/data/cidades";
 import { SearchableDropdown } from "@/components/SearchableDropdown";
@@ -250,7 +251,7 @@ export default function DashboardPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Nicho / Palavra-chave</label>
-                  <SearchableDropdown options={NICHOS} value={nicho} onChange={setNicho} placeholder="Ex: Dentista, Pet Shop..." />
+                  <CategorizedNichoDropdown value={nicho} onChange={setNicho} placeholder="Ex: Dentista, Pet Shop..." />
                 </div>
 
                 <div className="space-y-1.5">
