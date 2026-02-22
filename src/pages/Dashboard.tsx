@@ -203,6 +203,7 @@ export default function DashboardPage() {
         endereco: l.endereco ?? null,
         instagram: l.instagram ?? null,
         linkedin: l.linkedin ?? null,
+        observacoes: l.observacoes ?? null,
         user_id: user?.id,
       }));
 

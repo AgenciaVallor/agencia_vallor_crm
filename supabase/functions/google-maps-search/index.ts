@@ -33,6 +33,7 @@ interface Lead {
   telefone: string | null; whatsapp: string | null; email: string | null;
   site: string | null; fonte: string; status_funil: string; temperatura: string;
   endereco: string | null; instagram: string | null; linkedin: string | null;
+  observacoes?: string | null;
 }
 
 // ─── Google Places Text Search (legacy) with full pagination ───
@@ -48,7 +49,6 @@ async function searchGoogleMaps(nicho: string, cidade: string, estado: string, q
     if (pageToken) url += `&pagetoken=${pageToken}`;
 
     logs.push(`Página ${page}: buscando resultados...`);
-    console.log(`Google Text Search página ${page}...`);
 
     const res = await fetch(url);
     if (!res.ok) {
@@ -61,12 +61,10 @@ async function searchGoogleMaps(nicho: string, cidade: string, estado: string, q
     const data = await res.json();
     const results = data.results ?? [];
     logs.push(`Página ${page}: encontrados ${results.length} resultados.`);
-    console.log(`Página ${page}: ${results.length} resultados`);
 
     for (const place of results) {
       if (allLeads.length >= qty) break;
 
-      // Get place details for phone number
       let phone: string | null = null;
       let website: string | null = null;
       if (place.place_id) {
@@ -78,6 +76,8 @@ async function searchGoogleMaps(nicho: string, cidade: string, estado: string, q
             const result = detailsData.result ?? {};
             phone = cleanPhone(result.formatted_phone_number ?? result.international_phone_number);
             website = result.website ?? null;
+          } else {
+            await detailsRes.text();
           }
         } catch (e) {
           console.error('Details fetch error:', e);
@@ -85,7 +85,6 @@ async function searchGoogleMaps(nicho: string, cidade: string, estado: string, q
       }
 
       const whatsapp = inferWhatsapp(phone);
-      const endereco = place.formatted_address ?? null;
 
       allLeads.push({
         nome_empresa: place.name ?? 'Sem nome',
@@ -94,7 +93,8 @@ async function searchGoogleMaps(nicho: string, cidade: string, estado: string, q
         site: website, fonte: 'Google Maps',
         status_funil: 'Novo',
         temperatura: classifyTemp(whatsapp, null, website, null, null),
-        endereco, instagram: null, linkedin: null,
+        endereco: place.formatted_address ?? null,
+        instagram: null, linkedin: null,
       });
     }
 
@@ -105,12 +105,10 @@ async function searchGoogleMaps(nicho: string, cidade: string, estado: string, q
     }
 
     logs.push('Próxima página encontrada, continuando...');
-    // Google requires ~2s delay before using next_page_token
     await new Promise(r => setTimeout(r, 2000));
   }
 
   logs.push(`Busca Maps concluída: ${allLeads.length} leads capturados.`);
-  console.log(`Google Maps total: ${allLeads.length} leads`);
   return allLeads;
 }
 
@@ -147,6 +145,7 @@ async function searchOverpass(nicho: string, cidade: string, estado: string, qty
   });
 
   if (!res.ok) {
+    await res.text();
     logs.push(`OpenStreetMap retornou erro ${res.status}.`);
     return [];
   }
@@ -184,16 +183,104 @@ function deduplicateLeads(leads: Lead[]): { unique: Lead[]; skipped: number } {
     const nameKey = lead.nome_empresa.toLowerCase().trim();
     const key = phoneKey ? `phone:${phoneKey}` : `name:${nameKey}`;
 
-    if (seen.has(key)) {
-      skipped++;
-      continue;
-    }
+    if (seen.has(key)) { skipped++; continue; }
     seen.add(key);
     if (phoneKey) seen.add(`name:${nameKey}`);
     unique.push(lead);
   }
 
   return { unique, skipped };
+}
+
+// ─── Google Custom Search Enrichment ───
+async function enrichLeadsWithSearch(leads: Lead[], apiKey: string, cx: string, logs: string[]): Promise<void> {
+  const priority: Record<string, number> = { 'Fervendo': 0, 'Quente': 1, 'Morno': 2, 'Frio': 3, 'Desinteressado': 4 };
+  leads.sort((a, b) => (priority[a.temperatura] ?? 5) - (priority[b.temperatura] ?? 5));
+
+  const BATCH = 5;
+  let enriched = 0;
+
+  for (let i = 0; i < leads.length; i += BATCH) {
+    const batch = leads.slice(i, i + BATCH);
+    const batchNum = Math.floor(i / BATCH) + 1;
+    logs.push(`🔎 Enriquecendo com Google Search (lote ${batchNum}, ${batch.length} leads)...`);
+
+    for (const lead of batch) {
+      try {
+        const q = `${lead.nome_empresa} ${lead.cidade} ${lead.estado} email OR instagram OR facebook OR linkedin`;
+        const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(q)}&num=5`;
+
+        const res = await fetch(url);
+        if (!res.ok) {
+          await res.text();
+          if (res.status === 429 || res.status === 403) {
+            logs.push(`⚠️ Limite da API Google Search atingido. Parando enriquecimento.`);
+            return;
+          }
+          continue;
+        }
+
+        const data = await res.json();
+        const items = data.items ?? [];
+        const found: string[] = [];
+        let facebook: string | null = null;
+
+        for (const item of items) {
+          const snippet = `${item.snippet ?? ''} ${item.title ?? ''} ${item.link ?? ''}`;
+          const link: string = item.link ?? '';
+
+          // Email
+          if (!lead.email) {
+            const m = snippet.match(/[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}/);
+            if (m && !m[0].includes('example') && !m[0].includes('sentry') && !m[0].includes('noreply')) {
+              lead.email = m[0];
+              found.push(`email`);
+            }
+          }
+
+          // Instagram
+          if (!lead.instagram && link.includes('instagram.com/')) {
+            lead.instagram = link;
+            found.push('Instagram');
+          } else if (!lead.instagram) {
+            const igM = snippet.match(/instagram\.com\/([\w.]{3,30})/i);
+            if (igM) { lead.instagram = `https://instagram.com/${igM[1]}`; found.push('Instagram'); }
+          }
+
+          // Facebook
+          if (!facebook && link.includes('facebook.com/') && !link.includes('/sharer') && !link.includes('/login')) {
+            facebook = link;
+            found.push('Facebook');
+          }
+
+          // LinkedIn
+          if (!lead.linkedin && link.includes('linkedin.com/')) {
+            lead.linkedin = link;
+            found.push('LinkedIn');
+          }
+        }
+
+        // Store facebook in observacoes
+        if (facebook) {
+          lead.observacoes = `Facebook: ${facebook}`;
+        }
+
+        if (found.length > 0) {
+          enriched++;
+          logs.push(`✅ Encontrado ${found.join(', ')} para "${lead.nome_empresa}"`);
+        }
+
+        // Reclassify temperature
+        lead.temperatura = classifyTemp(lead.whatsapp, lead.email, lead.site, lead.instagram, lead.linkedin);
+
+        await new Promise(r => setTimeout(r, 250));
+      } catch (e) {
+        console.error(`Enrichment error for "${lead.nome_empresa}":`, e);
+      }
+    }
+  }
+
+  logs.push(`🏁 Enriquecimento concluído: ${enriched} leads atualizados com dados extras.`);
 }
 
 // ─── MAIN HANDLER ───
@@ -234,10 +321,10 @@ Deno.serve(async (req) => {
     let leads: Lead[] = [];
     let fonte = '';
 
-    // 1) Google Maps (Text Search with pagination)
+    // 1) Google Maps
     const googleKey = Deno.env.get('GOOGLE_MAPS_API_KEY');
     if (googleKey) {
-      logs.push('Iniciando busca no Google Maps (todas as páginas)...');
+      logs.push('🔍 Iniciando busca no Google Maps (todas as páginas)...');
       leads = await searchGoogleMaps(sNicho, sCidade, sEstado, qty, googleKey, logs);
       fonte = 'Google Maps';
     }
@@ -252,18 +339,28 @@ Deno.serve(async (req) => {
     // 3) Deduplicate
     const { unique, skipped } = deduplicateLeads(leads);
     if (skipped > 0) {
-      logs.push(`${skipped} leads duplicados ignorados.`);
-      console.log(`${skipped} duplicados removidos`);
+      logs.push(`🔄 ${skipped} leads duplicados ignorados.`);
     }
 
-    if (unique.length > 0) {
-      logs.push(`Captura concluída! ${unique.length} leads encontrados via ${fonte}.`);
+    // 4) Enrich with Google Custom Search
+    const customSearchCx = Deno.env.get('GOOGLE_CUSTOM_SEARCH_CX');
+    if (customSearchCx && googleKey && unique.length > 0) {
+      logs.push('🔍 Iniciando enriquecimento via Google Search...');
+      await enrichLeadsWithSearch(unique, googleKey, customSearchCx, logs);
+    } else if (!customSearchCx) {
+      logs.push('⚠️ Google Custom Search não configurado. Pulando enriquecimento.');
+    }
+
+    const finalLeads = unique.slice(0, qty);
+
+    if (finalLeads.length > 0) {
+      logs.push(`✅ Captura concluída! ${finalLeads.length} leads encontrados via ${fonte}.`);
     } else {
       logs.push('Nenhum lead encontrado nas fontes disponíveis.');
     }
 
     return new Response(
-      JSON.stringify({ success: true, leads: unique.slice(0, qty), total: unique.length, fonte, logs, duplicatesSkipped: skipped }),
+      JSON.stringify({ success: true, leads: finalLeads, total: finalLeads.length, fonte, logs, duplicatesSkipped: skipped }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (err) {
