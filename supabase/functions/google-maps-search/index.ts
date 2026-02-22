@@ -5,23 +5,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-const COORDS: Record<string, { lat: number; lng: number }> = {
-  AC: { lat: -9.9754, lng: -67.8249 }, AL: { lat: -9.6658, lng: -35.7353 },
-  AP: { lat: 0.0349, lng: -51.0694 }, AM: { lat: -3.119, lng: -60.0217 },
-  BA: { lat: -12.9714, lng: -38.5124 }, CE: { lat: -3.7172, lng: -38.5433 },
-  DF: { lat: -15.7975, lng: -47.8919 }, ES: { lat: -20.3155, lng: -40.3128 },
-  GO: { lat: -16.6869, lng: -49.2648 }, MA: { lat: -2.5297, lng: -44.2825 },
-  MT: { lat: -15.601, lng: -56.0974 }, MS: { lat: -20.4697, lng: -54.6201 },
-  MG: { lat: -19.9191, lng: -43.9386 }, PA: { lat: -1.4558, lng: -48.5024 },
-  PB: { lat: -7.1195, lng: -34.845 }, PR: { lat: -25.4284, lng: -49.2733 },
-  PE: { lat: -8.0476, lng: -34.877 }, PI: { lat: -5.0892, lng: -42.8019 },
-  RJ: { lat: -22.9068, lng: -43.1729 }, RN: { lat: -5.7945, lng: -35.211 },
-  RS: { lat: -30.0346, lng: -51.2177 }, RO: { lat: -8.7612, lng: -63.9004 },
-  RR: { lat: 2.8195, lng: -60.6714 }, SC: { lat: -27.5954, lng: -48.548 },
-  SP: { lat: -23.5505, lng: -46.6333 }, SE: { lat: -10.9091, lng: -37.0677 },
-  TO: { lat: -10.1689, lng: -48.3317 },
-};
-
 function cleanPhone(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const digits = raw.replace(/\D/g, '');
@@ -36,11 +19,11 @@ function inferWhatsapp(phone: string | null): string | null {
   return null;
 }
 
-function classifyTemp(wa: string | null, email: string | null, site: string | null): string {
-  const w = !!wa, e = !!email, s = !!site;
-  if (w && e && s) return 'Fervendo';
-  if (w && (e || s)) return 'Quente';
-  if (w) return 'Morno';
+function classifyTemp(wa: string | null, email: string | null, site: string | null, instagram: string | null, linkedin: string | null): string {
+  const w = !!wa, e = !!email, s = !!site, social = !!instagram || !!linkedin;
+  if (w && e && (s || social)) return 'Fervendo';
+  if (w && (e || s || social)) return 'Quente';
+  if (w || !!cleanPhone(wa)) return 'Morno';
   if (s || e) return 'Frio';
   return 'Desinteressado';
 }
@@ -52,59 +35,87 @@ interface Lead {
   endereco: string | null; instagram: string | null; linkedin: string | null;
 }
 
-// ─── SOURCE 1: Google Places API (New) ───
-async function searchGoogle(nicho: string, cidade: string, estado: string, qty: number, apiKey: string): Promise<{ leads: Lead[]; error?: string }> {
-  const coords = COORDS[estado] ?? COORDS.DF;
-  const textQuery = `${nicho} em ${cidade}, ${estado}, Brasil`;
+// ─── Google Places Text Search (legacy) with full pagination ───
+async function searchGoogleMaps(nicho: string, cidade: string, estado: string, qty: number, apiKey: string, logs: string[]): Promise<Lead[]> {
+  const query = `${nicho} em ${cidade}, ${estado}, Brasil`;
   const allLeads: Lead[] = [];
   let pageToken: string | undefined;
+  let page = 0;
 
-  for (let page = 0; page < 3 && allLeads.length < qty; page++) {
-    const body: Record<string, unknown> = {
-      textQuery, languageCode: 'pt-BR',
-      maxResultCount: Math.min(20, qty - allLeads.length),
-      locationBias: { circle: { center: { latitude: coords.lat, longitude: coords.lng }, radius: 50000.0 } },
-    };
-    if (pageToken) body.pageToken = pageToken;
+  while (allLeads.length < qty && page < 3) {
+    page++;
+    let url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&language=pt-BR&key=${apiKey}`;
+    if (pageToken) url += `&pagetoken=${pageToken}`;
 
-    const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': apiKey,
-        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.googleMapsUri,nextPageToken',
-      },
-      body: JSON.stringify(body),
-    });
+    logs.push(`Página ${page}: buscando resultados...`);
+    console.log(`Google Text Search página ${page}...`);
 
+    const res = await fetch(url);
     if (!res.ok) {
       const errText = await res.text();
       console.error('Google Maps API error:', res.status, errText);
-      return { leads: allLeads, error: `Google retornou ${res.status}` };
+      logs.push(`Google retornou erro ${res.status} na página ${page}.`);
+      break;
     }
 
     const data = await res.json();
-    for (const place of (data.places ?? [])) {
-      const phone = cleanPhone(place.nationalPhoneNumber ?? place.internationalPhoneNumber);
-      const website = place.websiteUri ?? null;
+    const results = data.results ?? [];
+    logs.push(`Página ${page}: encontrados ${results.length} resultados.`);
+    console.log(`Página ${page}: ${results.length} resultados`);
+
+    for (const place of results) {
+      if (allLeads.length >= qty) break;
+
+      // Get place details for phone number
+      let phone: string | null = null;
+      let website: string | null = null;
+      if (place.place_id) {
+        try {
+          const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&fields=formatted_phone_number,international_phone_number,website&language=pt-BR&key=${apiKey}`;
+          const detailsRes = await fetch(detailsUrl);
+          if (detailsRes.ok) {
+            const detailsData = await detailsRes.json();
+            const result = detailsData.result ?? {};
+            phone = cleanPhone(result.formatted_phone_number ?? result.international_phone_number);
+            website = result.website ?? null;
+          }
+        } catch (e) {
+          console.error('Details fetch error:', e);
+        }
+      }
+
       const whatsapp = inferWhatsapp(phone);
-      const endereco = place.formattedAddress ?? null;
+      const endereco = place.formatted_address ?? null;
+
       allLeads.push({
-        nome_empresa: place.displayName?.text ?? 'Sem nome', nicho, cidade, estado,
-        telefone: phone, whatsapp, email: null, site: website,
-        fonte: 'Google', status_funil: 'Novo', temperatura: classifyTemp(whatsapp, null, website),
+        nome_empresa: place.name ?? 'Sem nome',
+        nicho, cidade, estado,
+        telefone: phone, whatsapp, email: null,
+        site: website, fonte: 'Google Maps',
+        status_funil: 'Novo',
+        temperatura: classifyTemp(whatsapp, null, website, null, null),
         endereco, instagram: null, linkedin: null,
       });
     }
-    pageToken = data.nextPageToken;
-    if (!pageToken) break;
-    if (allLeads.length < qty) await new Promise(r => setTimeout(r, 2000));
+
+    pageToken = data.next_page_token;
+    if (!pageToken) {
+      logs.push('Não há mais páginas no Google Maps.');
+      break;
+    }
+
+    logs.push('Próxima página encontrada, continuando...');
+    // Google requires ~2s delay before using next_page_token
+    await new Promise(r => setTimeout(r, 2000));
   }
-  return { leads: allLeads };
+
+  logs.push(`Busca Maps concluída: ${allLeads.length} leads capturados.`);
+  console.log(`Google Maps total: ${allLeads.length} leads`);
+  return allLeads;
 }
 
-// ─── SOURCE 2: OpenStreetMap / Overpass ───
-async function searchOverpass(nicho: string, cidade: string, estado: string, qty: number): Promise<{ leads: Lead[]; error?: string }> {
+// ─── OpenStreetMap / Overpass fallback ───
+async function searchOverpass(nicho: string, cidade: string, estado: string, qty: number, logs: string[]): Promise<Lead[]> {
   const nichoLower = nicho.toLowerCase();
   let osmFilter = `"name"~"${nicho}",i`;
 
@@ -122,14 +133,12 @@ async function searchOverpass(nicho: string, cidade: string, estado: string, qty
     supermercado: '"shop"="supermarket"', mercado: '"shop"="supermarket"',
     escola: '"amenity"="school"', imobiliária: '"office"="estate_agent"',
     contabilidade: '"office"="accountant"', contador: '"office"="accountant"',
-    'agência de viagens': '"shop"="travel_agency"', agencia: '"shop"="travel_agency"',
-    marmoraria: '"craft"="stonemason"', vidraçaria: '"craft"="glaziery"',
-    loja: '"shop"="yes"', bar: '"amenity"="bar"', café: '"amenity"="cafe"',
   };
   for (const [key, val] of Object.entries(tagMap)) {
     if (nichoLower.includes(key)) { osmFilter = val; break; }
   }
 
+  logs.push('Tentando OpenStreetMap/Overpass (fallback)...');
   const query = `[out:json][timeout:25];area["name"="${cidade}"]["admin_level"~"8|7"]->.searchArea;(node[${osmFilter}](area.searchArea);way[${osmFilter}](area.searchArea););out body ${qty};`;
   const res = await fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',
@@ -138,9 +147,8 @@ async function searchOverpass(nicho: string, cidade: string, estado: string, qty
   });
 
   if (!res.ok) {
-    const errText = await res.text();
-    console.error('Overpass error:', res.status, errText);
-    return { leads: [], error: `Overpass retornou ${res.status}` };
+    logs.push(`OpenStreetMap retornou erro ${res.status}.`);
+    return [];
   }
 
   const data = await res.json();
@@ -149,16 +157,43 @@ async function searchOverpass(nicho: string, cidade: string, estado: string, qty
     const phone = cleanPhone(tags.phone ?? tags['contact:phone']);
     const website = tags.website ?? tags['contact:website'] ?? null;
     const whatsapp = inferWhatsapp(phone);
+    const email = tags.email ?? tags['contact:email'] ?? null;
+    const instagram = tags['contact:instagram'] ?? null;
     const endereco = [tags['addr:street'], tags['addr:housenumber'], tags['addr:suburb']].filter(Boolean).join(', ') || null;
     return {
       nome_empresa: tags.name, nicho, cidade, estado,
-      telefone: phone, whatsapp, email: tags.email ?? tags['contact:email'] ?? null,
+      telefone: phone, whatsapp, email,
       site: website, fonte: 'OpenStreetMap', status_funil: 'Novo',
-      temperatura: classifyTemp(whatsapp, tags.email ?? null, website),
-      endereco, instagram: tags['contact:instagram'] ?? null, linkedin: null,
+      temperatura: classifyTemp(whatsapp, email, website, instagram, null),
+      endereco, instagram, linkedin: null,
     };
   });
-  return { leads };
+
+  logs.push(leads.length > 0 ? `OpenStreetMap retornou ${leads.length} resultados.` : 'OpenStreetMap: sem resultados.');
+  return leads;
+}
+
+// ─── Deduplicate leads by phone/name ───
+function deduplicateLeads(leads: Lead[]): { unique: Lead[]; skipped: number } {
+  const seen = new Set<string>();
+  const unique: Lead[] = [];
+  let skipped = 0;
+
+  for (const lead of leads) {
+    const phoneKey = lead.whatsapp ?? lead.telefone ?? '';
+    const nameKey = lead.nome_empresa.toLowerCase().trim();
+    const key = phoneKey ? `phone:${phoneKey}` : `name:${nameKey}`;
+
+    if (seen.has(key)) {
+      skipped++;
+      continue;
+    }
+    seen.add(key);
+    if (phoneKey) seen.add(`name:${nameKey}`);
+    unique.push(lead);
+  }
+
+  return { unique, skipped };
 }
 
 // ─── MAIN HANDLER ───
@@ -176,8 +211,8 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } });
 
     const token = authHeader.replace('Bearer ', '');
-    const { data: claimsData, error: claimsErr } = await supabase.auth.getClaims(token);
-    if (claimsErr || !claimsData?.claims) {
+    const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
+    if (userErr || !user) {
       return new Response(JSON.stringify({ success: false, error: 'Token inválido.' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
@@ -193,43 +228,42 @@ Deno.serve(async (req) => {
     const sEstado = String(estado).slice(0, 5).trim();
     const qty = Math.min(Math.max(Number(maxResults) || 20, 1), 100);
 
-    console.log(`User ${claimsData.claims.sub} buscando "${sNicho}" em ${sCidade}-${sEstado}, qty=${qty}`);
+    console.log(`User ${user.id} buscando "${sNicho}" em ${sCidade}-${sEstado}, qty=${qty}`);
 
+    const logs: string[] = [];
     let leads: Lead[] = [];
     let fonte = '';
-    const logs: string[] = [];
 
-    // 1) Google Maps
+    // 1) Google Maps (Text Search with pagination)
     const googleKey = Deno.env.get('GOOGLE_MAPS_API_KEY');
     if (googleKey) {
-      logs.push('Buscando no Google Places...');
-      console.log('Buscando no Google Places...');
-      const r = await searchGoogle(sNicho, sCidade, sEstado, qty, googleKey);
-      if (r.leads.length > 0) {
-        leads = r.leads; fonte = 'Google';
-        logs.push(`Google retornou ${leads.length} resultados.`);
-        console.log(`Google retornou ${leads.length} leads`);
-      } else {
-        logs.push(`Google falhou: ${r.error ?? 'Sem resultados'}`);
-        console.log(`Google falhou: ${r.error}`);
-      }
+      logs.push('Iniciando busca no Google Maps (todas as páginas)...');
+      leads = await searchGoogleMaps(sNicho, sCidade, sEstado, qty, googleKey, logs);
+      fonte = 'Google Maps';
     }
 
     // 2) OSM fallback
     if (leads.length === 0) {
-      logs.push('Tentando OpenStreetMap/Overpass (fallback 2)...');
-      console.log('Tentando Overpass...');
-      const r = await searchOverpass(sNicho, sCidade, sEstado, qty);
-      leads = r.leads; fonte = 'OpenStreetMap';
-      logs.push(r.leads.length > 0 ? `OpenStreetMap retornou ${leads.length} resultados.` : `OpenStreetMap: ${r.error ?? 'Sem resultados'}`);
-      console.log(`Overpass retornou ${leads.length} leads`);
+      const osmLeads = await searchOverpass(sNicho, sCidade, sEstado, qty, logs);
+      leads = osmLeads;
+      fonte = 'OpenStreetMap';
     }
 
-    if (leads.length > 0) logs.push(`Captura concluída! ${leads.length} leads encontrados via ${fonte}.`);
-    else logs.push('Nenhum lead encontrado nas fontes disponíveis.');
+    // 3) Deduplicate
+    const { unique, skipped } = deduplicateLeads(leads);
+    if (skipped > 0) {
+      logs.push(`${skipped} leads duplicados ignorados.`);
+      console.log(`${skipped} duplicados removidos`);
+    }
+
+    if (unique.length > 0) {
+      logs.push(`Captura concluída! ${unique.length} leads encontrados via ${fonte}.`);
+    } else {
+      logs.push('Nenhum lead encontrado nas fontes disponíveis.');
+    }
 
     return new Response(
-      JSON.stringify({ success: true, leads: leads.slice(0, qty), total: leads.length, fonte, logs }),
+      JSON.stringify({ success: true, leads: unique.slice(0, qty), total: unique.length, fonte, logs, duplicatesSkipped: skipped }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (err) {
