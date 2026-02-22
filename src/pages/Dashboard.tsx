@@ -100,7 +100,33 @@ export default function DashboardPage() {
 
     const cidadeAlvo = sortear ? randomCidade(estadoSigla) : cidade;
 
-    addLog(`🔍 Iniciando busca multi-fonte (Google → HERE → OSM)...`, "info");
+    // ── Duplicate check: verify if this search was already done ──
+    addLog(`🔎 Verificando buscas anteriores para "${nicho}" em ${cidadeAlvo}-${estadoSigla}...`, "info");
+    try {
+      const { count: existingCount } = await supabase
+        .from("leads")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user?.id)
+        .ilike("nicho", nicho)
+        .ilike("cidade", cidadeAlvo)
+        .eq("estado", estadoSigla);
+
+      if (existingCount && existingCount > 0) {
+        addLog(`⚠️ Busca já realizada anteriormente. ${existingCount} leads similares encontrados.`, "warn");
+        toast({
+          title: "Busca duplicada",
+          description: `Busca já realizada anteriormente para este nicho em ${cidadeAlvo}-${estadoSigla}. Existem ${existingCount} leads similares na Biblioteca.`,
+          variant: "destructive",
+        });
+        setCapturing(false);
+        return;
+      }
+      addLog(`✅ Nenhuma busca anterior encontrada. Prosseguindo...`, "success");
+    } catch {
+      addLog(`⚠️ Não foi possível verificar duplicatas. Prosseguindo...`, "warn");
+    }
+
+    addLog(`🔍 Iniciando busca no Google Maps (todas as páginas)...`, "info");
     addLog(`📍 Buscando "${nicho}" em ${cidadeAlvo} - ${estadoSigla}...`, "info");
 
     try {
@@ -125,19 +151,24 @@ export default function DashboardPage() {
       // Show server-side logs
       if (data.logs && Array.isArray(data.logs)) {
         for (const logMsg of data.logs) {
-          const type: LogEntry["type"] = logMsg.includes("falhou") || logMsg.includes("Nenhum") ? "warn" : logMsg.includes("concluída") ? "success" : "info";
+          const type: LogEntry["type"] = logMsg.includes("falhou") || logMsg.includes("Nenhum") || logMsg.includes("ignorado") ? "warn" : logMsg.includes("concluída") || logMsg.includes("Encontrado") ? "success" : "info";
           addLog(logMsg, type);
         }
       }
 
       const fonte = data.fonte ?? "Google";
       const allLeads = data.leads ?? [];
+      const duplicatesSkipped = data.duplicatesSkipped ?? 0;
 
       if (allLeads.length === 0) {
         addLog(`⚠️ Nenhum resultado encontrado para "${nicho}" em ${cidadeAlvo}.`, "warn");
         toast({ title: "Sem resultados", description: "Nenhum lead encontrado nas fontes disponíveis. Tente outro nicho/cidade.", variant: "destructive" });
         setCapturing(false);
         return;
+      }
+
+      if (duplicatesSkipped > 0) {
+        addLog(`🔄 ${duplicatesSkipped} leads duplicados ignorados.`, "warn");
       }
 
       // Apply capture mode filter
