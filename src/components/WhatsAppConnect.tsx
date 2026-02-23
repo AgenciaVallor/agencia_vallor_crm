@@ -9,7 +9,8 @@ interface WhatsAppAccount {
   token: string | null;
   numero: string | null;
   status: string;
-  modo_operacao: 'ativo' | 'receptivo';
+  modo_disparo: boolean;
+  modo_ia: boolean;
   connected_at: string | null;
 }
 
@@ -194,13 +195,25 @@ export default function WhatsAppConnect() {
     } catch (err) { console.error("Disconnect error:", err); }
   }
 
-  async function updateModo(accountId: string, modo: 'ativo' | 'receptivo') {
+  async function toggleModo(accountId: string, field: 'modo_disparo' | 'modo_ia') {
     try {
-      await supabase.from("whatsapp_accounts").update({ modo_operacao: modo }).eq("id", accountId);
-      setAccounts(prev => prev.map(a => a.id === accountId ? { ...a, modo_operacao: modo } : a));
-      if (selectedAccount?.id === accountId) setSelectedAccount(prev => prev ? { ...prev, modo_operacao: modo } : null);
-      toast({ title: "Modo atualizado", description: `WhatsApp agora está em modo ${modo === 'ativo' ? 'Ativo' : 'Receptivo'}.` });
-    } catch (err) { console.error("Update modo error:", err); }
+      const account = accounts.find(a => a.id === accountId);
+      if (!account) return;
+
+      const newValue = !account[field];
+      await supabase.from("whatsapp_accounts").update({ [field]: newValue }).eq("id", accountId);
+
+      setAccounts(prev => prev.map(a => a.id === accountId ? { ...a, [field]: newValue } : a));
+      if (selectedAccount?.id === accountId) {
+        setSelectedAccount(prev => prev ? { ...prev, [field]: newValue } : null);
+      }
+
+      const label = field === 'modo_disparo' ? 'Modo Ativo' : 'Modo Receptivo';
+      toast({
+        title: `${label} ${newValue ? 'Ligado' : 'Desligado'}`,
+        description: newValue ? `O número agora ${field === 'modo_disparo' ? 'realiza disparos' : 'responde mensagens'}.` : "Função desativada para este número."
+      });
+    } catch (err) { console.error("Toggle modo error:", err); }
   }
 
   const dotColor = (status: string) =>
@@ -339,31 +352,37 @@ export default function WhatsAppConnect() {
 
             {/* Mode Selection */}
             {selectedAccount.status === "conectado" && (
-              <div className="bg-secondary/30 rounded-xl p-3 space-y-2 border border-border/50">
+              <div className="bg-secondary/30 rounded-xl p-3 space-y-3 border border-border/50">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">Modo de Operação</span>
-                  <div className="flex bg-card rounded-lg p-1 border border-border gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">Funcionalidades</span>
+                  <div className="flex items-center gap-2">
                     <button
-                      onClick={() => updateModo(selectedAccount.id, 'ativo')}
-                      className={cn("px-3 py-1 rounded text-[10px] font-bold transition-all",
-                        selectedAccount.modo_operacao === 'ativo' ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}
+                      onClick={() => toggleModo(selectedAccount.id, 'modo_disparo')}
+                      className={cn("px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border",
+                        selectedAccount.modo_disparo ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground border-border hover:text-foreground")}
                     >
                       🚀 ATIVO
                     </button>
                     <button
-                      onClick={() => updateModo(selectedAccount.id, 'receptivo')}
-                      className={cn("px-3 py-1 rounded text-[10px] font-bold transition-all",
-                        selectedAccount.modo_operacao === 'receptivo' ? "bg-indigo-500 text-white shadow-[0_0_10px_rgba(99,102,241,0.3)]" : "text-muted-foreground hover:text-foreground")}
+                      onClick={() => toggleModo(selectedAccount.id, 'modo_ia')}
+                      className={cn("px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border",
+                        selectedAccount.modo_ia ? "bg-indigo-500 text-white border-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.3)]" : "bg-card text-muted-foreground border-border hover:text-foreground")}
                     >
                       🎯 RECEPTIVO
                     </button>
                   </div>
                 </div>
-                <p className="text-[10px] text-muted-foreground leading-relaxed italic">
-                  {selectedAccount.modo_operacao === 'ativo'
-                    ? "🚀 Envia disparos. NÃO responde mensagens orgânicas."
-                    : "🎯 SDR IA: Responde com técnicas BRAT + SPIN SELLING e agenda reuniões."}
-                </p>
+                <div className="space-y-1">
+                  <p className="text-[10px] text-muted-foreground leading-relaxed flex items-center gap-1">
+                    {selectedAccount.modo_disparo ? <span className="text-primary font-bold">● Ativo:</span> : <span className="text-muted-foreground">○ Ativo:</span>} Envia disparos de campanhas.
+                  </p>
+                  <p className="text-[10px] text-muted-foreground leading-relaxed flex items-center gap-1">
+                    {selectedAccount.modo_ia ? <span className="text-indigo-400 font-bold">● Receptivo:</span> : <span className="text-muted-foreground">○ Receptivo:</span>} IA SDR responde mensagens.
+                  </p>
+                  {!selectedAccount.modo_disparo && !selectedAccount.modo_ia && (
+                    <p className="text-[10px] text-yellow-500/80 italic mt-1 font-medium">⚠️ Chip em descanso: recebe mensagens mas não reage.</p>
+                  )}
+                </div>
               </div>
             )}
           </div>
