@@ -59,42 +59,71 @@ export function ImportModal({ onClose, onSuccess }: ImportModalProps) {
                 const ws = wb.Sheets[wb.SheetNames[0]];
                 const rawData: any[] = XLSX.utils.sheet_to_json(ws);
 
-                // Map columns (fuzzy match)
+                if (rawData.length === 0) {
+                    toast.error("O arquivo parece estar vazio.");
+                    setImporting(false);
+                    return;
+                }
+
+                // Helper to normalize keys and find matches
+                const findValue = (row: any, synonyms: string[]) => {
+                    const keys = Object.keys(row);
+                    const foundKey = keys.find(k => {
+                        const normalized = k.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+                        return synonyms.some(s => normalized === s);
+                    });
+                    return foundKey ? row[foundKey] : null;
+                };
+
                 const leadsToInsert = rawData.map((row: any) => {
-                    const name = row.nome || row.Nome || row.name || row.Name || "Sem nome";
-                    const phoneRaw = row.whatsapp || row.WhatsApp || row.telefone || row.Telefone || row.phone || row.Phone || null;
+                    const name = findValue(row, ["nome", "name", "empresa", "contato", "nomeempresa", "razaosocial"]) || "Sem nome";
+                    const phoneRaw = findValue(row, ["whatsapp", "telefone", "phone", "celular", "tel", "wpp", "contato", "numero"]);
                     const phone = cleanPhone(phoneRaw);
-                    const email = row.email || row.Email || null;
-                    const site = row.site || row.Site || row.website || row.Website || null;
-                    const nicho = row.nicho || row.Nicho || row.categoria || row.Categoria || "Geral";
-                    const cidade = row.cidade || row.Cidade || "";
-                    const estado = row.estado || row.Estado || "";
+                    const email = findValue(row, ["email", "e-mail", "correio", "mail"]);
+                    const site = findValue(row, ["site", "website", "url", "link", "pagina"]);
+                    const nicho = findValue(row, ["nicho", "categoria", "segmento", "ramo", "atividade"]) || "Geral";
+                    const cidade = findValue(row, ["cidade", "city", "municipio"]) || "";
+                    const estado = findValue(row, ["estado", "uf", "state", "regiao"]) || "";
 
                     return {
-                        nome_empresa: name,
+                        nome_empresa: String(name),
                         whatsapp: phone,
                         telefone: phone,
-                        email: email,
-                        site: site,
-                        nicho: nicho,
-                        cidade: cidade,
-                        estado: estado,
+                        email: email ? String(email).toLowerCase() : null,
+                        site: site ? String(site) : null,
+                        nicho: String(nicho),
+                        cidade: String(cidade),
+                        estado: String(estado),
                         fonte: "Importado CSV",
                         status_funil: "Novo",
                         temperatura: classifyTemp(!!phone, !!email, !!site),
                         user_id: user.id
                     };
-                }).filter(l => l.nome_empresa !== "Sem nome" || l.whatsapp);
+                }).filter(l => (l.nome_empresa && l.nome_empresa !== "Sem nome") || l.whatsapp || l.email);
 
-                // Deduplicate locally by phone first
-                const uniqueLeads = Array.from(new Map(leadsToInsert.map(l => [l.whatsapp, l])).values());
+                if (leadsToInsert.length === 0) {
+                    toast.error("Não foram encontrados leads válidos (nome, telefone ou email) nas colunas mapeadas.");
+                    setImporting(false);
+                    return;
+                }
+
+                // Deduplicate locally by phone (if exists) or email
+                const uniqueLeads: any[] = [];
+                const seen = new Set();
+                leadsToInsert.forEach(l => {
+                    const identifier = l.whatsapp || l.email || l.nome_empresa;
+                    if (!seen.has(identifier)) {
+                        seen.add(identifier);
+                        uniqueLeads.push(l);
+                    }
+                });
+
                 const duplicatesCount = leadsToInsert.length - uniqueLeads.length;
-
-                const { data, error } = await supabase.from("leads").insert(uniqueLeads);
+                const { error } = await supabase.from("leads").insert(uniqueLeads);
 
                 if (error) throw error;
 
-                toast.success(`Importados ${uniqueLeads.length} contatos. Duplicados ignorados: ${duplicatesCount}`);
+                toast.success(`Sucesso! Importados ${uniqueLeads.length} contatos.`);
                 onSuccess();
                 onClose();
             };
