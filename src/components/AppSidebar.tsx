@@ -18,10 +18,8 @@ const userNavItems = [
   { title: "Biblioteca", url: "/biblioteca", icon: Library },
   { title: "CRM", url: "/crm", icon: Users },
   { title: "Campanhas", url: "/campanhas", icon: Megaphone },
-  { title: "Insights", url: "/insights", icon: BarChart2 },
   { title: "Emails", url: "/emails", icon: Mail },
-  { title: "Agente IA", url: "/agente", icon: Bot },
-  { title: "Agenda", url: "/agenda", icon: Calendar },
+  { title: "Agente IA", url: "/agente-ia", icon: Bot },
   { title: "Perfil", url: "/perfil", icon: User },
 ];
 

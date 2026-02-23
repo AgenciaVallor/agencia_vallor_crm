@@ -1,36 +1,50 @@
-import { useState } from "react";
-import { Upload, X, Loader2 } from "lucide-react";
+import React, { useState } from "react";
+import { X, Upload, CheckCircle, Loader2, Download } from "lucide-react";
+import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import * as XLSX from "xlsx";
 import { toast } from "sonner";
 
 interface ImportModalProps {
     onClose: () => void;
-    onComplete: () => void;
+    onSuccess: () => void;
 }
 
-export default function ImportModal({ onClose, onComplete }: ImportModalProps) {
+export function ImportModal({ onClose, onSuccess }: ImportModalProps) {
     const { user } = useAuth();
     const [file, setFile] = useState<File | null>(null);
     const [importing, setImporting] = useState(false);
     const [preview, setPreview] = useState<any[]>([]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const f = e.target.files?.[0];
-        if (!f) return;
-        setFile(f);
+        const selectedFile = e.target.files?.[0];
+        if (selectedFile) {
+            setFile(selectedFile);
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const bstr = evt.target?.result;
+                const wb = XLSX.read(bstr, { type: "binary" });
+                const wsname = wb.SheetNames[0];
+                const ws = wb.Sheets[wsname];
+                const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                setPreview(data.slice(0, 5));
+            };
+            reader.readAsBinaryString(selectedFile);
+        }
+    };
 
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-            const bstr = evt.target?.result;
-            const wb = XLSX.read(bstr, { type: "binary" });
-            const wsname = wb.SheetNames[0];
-            const ws = wb.Sheets[wsname];
-            const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
-            setPreview(data.slice(0, 6)); // Show first 5 rows
-        };
-        reader.readAsBinaryString(f);
+    const cleanPhone = (raw: any): string | null => {
+        if (!raw) return null;
+        const digits = String(raw).replace(/\D/g, "");
+        if (digits.length >= 10 && digits.length <= 13) return digits;
+        return null;
+    };
+
+    const classifyTemp = (hasWa: boolean, hasEmail: boolean, hasSite: boolean): string => {
+        if (hasWa && hasEmail && hasSite) return "Fervendo";
+        if (hasWa && (hasEmail || hasSite)) return "Quente";
+        if (hasWa) return "Morno";
+        return "Frio";
     };
 
     const handleImport = async () => {
@@ -42,147 +56,141 @@ export default function ImportModal({ onClose, onComplete }: ImportModalProps) {
             reader.onload = async (evt) => {
                 const bstr = evt.target?.result;
                 const wb = XLSX.read(bstr, { type: "binary" });
-                const wsname = wb.SheetNames[0];
-                const ws = wb.Sheets[wsname];
-                const rows: any[] = XLSX.utils.sheet_to_json(ws);
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const rawData: any[] = XLSX.utils.sheet_to_json(ws);
 
-                if (rows.length === 0) {
-                    toast.error("O arquivo está vazio.");
-                    setImporting(false);
-                    return;
-                }
+                // Map columns (fuzzy match)
+                const leadsToInsert = rawData.map((row: any) => {
+                    const name = row.nome || row.Nome || row.name || row.Name || "Sem nome";
+                    const phoneRaw = row.whatsapp || row.WhatsApp || row.telefone || row.Telefone || row.phone || row.Phone || null;
+                    const phone = cleanPhone(phoneRaw);
+                    const email = row.email || row.Email || null;
+                    const site = row.site || row.Site || row.website || row.Website || null;
+                    const nicho = row.nicho || row.Nicho || row.categoria || row.Categoria || "Geral";
+                    const cidade = row.cidade || row.Cidade || "";
+                    const estado = row.estado || row.Estado || "";
 
-                // Remove duplicates and Map columns
-                const seenPhones = new Set<string>();
-                const { data: existingLeads } = await supabase
-                    .from("leads")
-                    .select("whatsapp, telefone")
-                    .eq("user_id", user.id);
-
-                if (existingLeads) {
-                    existingLeads.forEach(l => {
-                        if (l.whatsapp) seenPhones.add(l.whatsapp.replace(/\D/g, ""));
-                        if (l.telefone) seenPhones.add(l.telefone.replace(/\D/g, ""));
-                    });
-                }
-
-                let duplicatesRemoved = 0;
-                const leadsToInsert = rows.reduce((acc: any[], r: any) => {
-                    const rawPhone = String(r.whatsapp || r.WhatsApp || r.celular || r.Celular || r.telefone || r.Telefone || r.phone || "").replace(/\D/g, "");
-                    const email = r.email || r.Email || null;
-                    const site = r.site || r.Site || r.website || null;
-
-                    if (rawPhone && seenPhones.has(rawPhone)) {
-                        duplicatesRemoved++;
-                        return acc;
-                    }
-                    if (rawPhone) seenPhones.add(rawPhone);
-
-                    // Classificação de temperatura
-                    let temperatura = "Frio";
-                    if (rawPhone && email && site) temperatura = "Fervendo";
-                    else if (rawPhone && (email || site)) temperatura = "Quente";
-                    else if (rawPhone) temperatura = "Morno";
-
-                    acc.push({
-                        user_id: user.id,
-                        nome_empresa: r.nome || r.empresa || r.name || r.Nome || "Sem Nome",
-                        whatsapp: rawPhone || null,
+                    return {
+                        nome_empresa: name,
+                        whatsapp: phone,
+                        telefone: phone,
                         email: email,
-                        telefone: rawPhone || null,
-                        cidade: r.cidade || r.Cidade || null,
-                        estado: r.estado || r.Estado || r.uf || r.UF || null,
-                        nicho: r.nicho || r.Nicho || r.categoria || "Importado",
                         site: site,
+                        nicho: nicho,
+                        cidade: cidade,
+                        estado: estado,
                         fonte: "Importado CSV",
                         status_funil: "Novo",
-                        temperatura: temperatura
-                    });
-                    return acc;
-                }, []);
+                        temperatura: classifyTemp(!!phone, !!email, !!site),
+                        user_id: user.id
+                    };
+                }).filter(l => l.nome_empresa !== "Sem nome" || l.whatsapp);
 
-                if (leadsToInsert.length === 0) {
-                    toast.error("Nenhum lead novo para importar.");
-                    setImporting(false);
-                    return;
-                }
+                // Deduplicate locally by phone first
+                const uniqueLeads = Array.from(new Map(leadsToInsert.map(l => [l.whatsapp, l])).values());
+                const duplicatesCount = leadsToInsert.length - uniqueLeads.length;
 
-                const { error } = await supabase.from("leads").insert(leadsToInsert);
+                const { data, error } = await supabase.from("leads").insert(uniqueLeads);
+
                 if (error) throw error;
 
-                toast.success(`Importados ${leadsToInsert.length} contatos. Duplicados removidos: ${duplicatesRemoved}`);
-                onComplete();
+                toast.success(`Importados ${uniqueLeads.length} contatos. Duplicados ignorados: ${duplicatesCount}`);
+                onSuccess();
+                onClose();
             };
             reader.readAsBinaryString(file);
-        } catch (err) {
-            console.error(err);
-            toast.error("Erro ao importar arquivo. Verifique o formato.");
+        } catch (err: any) {
+            console.error("Import error:", err);
+            toast.error("Erro ao importar base: " + err.message);
         } finally {
             setImporting(false);
         }
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md" onClick={onClose}>
-            <div className="relative w-full max-w-2xl rounded-2xl border border-white/10 bg-[#1a1c2e] shadow-2xl p-8 space-y-6" onClick={e => e.stopPropagation()}>
-                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors">
-                    <X className="h-6 w-6" />
-                </button>
-
-                <div className="space-y-1">
-                    <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-                        <Upload className="h-6 w-6 text-primary" /> Importar Contatos
-                    </h2>
-                    <p className="text-sm text-slate-400">Suba um arquivo Excel (.xlsx, .xls) ou CSV com seus leads.</p>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="bg-[#0f111a] border border-white/10 w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+                <div className="p-4 border-b border-white/5 flex items-center justify-between">
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                        <Download className="h-5 w-5 text-[hsl(var(--vallor-purple-light))]" />
+                        Importar Base de Leads
+                    </h3>
+                    <button onClick={onClose} className="p-1 hover:bg-white/5 rounded-lg transition-colors text-slate-400 hover:text-white">
+                        <X className="h-5 w-5" />
+                    </button>
                 </div>
 
-                <div className="grid gap-6">
-                    <div className="relative border-2 border-dashed border-white/10 rounded-2xl p-10 flex flex-col items-center justify-center group hover:border-primary/50 transition-colors">
-                        <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileChange} className="absolute inset-0 opacity-0 cursor-pointer" />
-                        <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-4 group-hover:scale-110 transition-transform">
-                            <Upload className="h-6 w-6" />
+                <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh]">
+                    {!file ? (
+                        <div
+                            className="border-2 border-dashed border-white/10 rounded-xl p-10 text-center hover:border-[hsl(var(--vallor-purple))]/50 transition-colors cursor-pointer group"
+                            onClick={() => document.getElementById("fileInput")?.click()}
+                        >
+                            <input id="fileInput" type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileChange} />
+                            <div className="h-12 w-12 rounded-full bg-[hsl(var(--vallor-purple)/0.2)] flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
+                                <Upload className="h-6 w-6 text-[hsl(var(--vallor-purple-light))]" />
+                            </div>
+                            <p className="text-sm text-slate-300 font-medium tracking-tight">Clique para selecionar ou arraste o arquivo</p>
+                            <p className="text-xs text-slate-500 mt-1">Suporta XLSX, XLS e CSV</p>
                         </div>
-                        <p className="text-sm font-medium text-slate-200">
-                            {file ? file.name : "Clique para selecionar ou arraste o arquivo"}
-                        </p>
-                        <p className="text-xs text-slate-500 mt-1">Colunas sugeridas: Nome, WhatsApp, Email, Nicho, Cidade, Estado</p>
-                    </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10">
+                                <div className="flex items-center gap-3">
+                                    <div className="h-10 w-10 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                                        <CheckCircle className="h-5 w-5" />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-bold text-white leading-none">{file.name}</p>
+                                        <p className="text-[11px] text-slate-500 mt-1">{(file.size / 1024).toFixed(1)} KB</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => { setFile(null); setPreview([]); }} className="text-red-400 hover:text-red-300 text-xs font-semibold px-3 py-1 hover:bg-red-400/10 rounded-lg transition-all">Limpar</button>
+                            </div>
 
-                    {preview.length > 0 && (
-                        <div className="space-y-2">
-                            <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Preview dos dados:</p>
-                            <div className="rounded-xl border border-white/5 bg-black/20 overflow-hidden">
-                                <table className="w-full text-left text-xs text-slate-300">
-                                    <thead className="bg-white/5">
-                                        <tr>{preview[0].map((h: any, i: number) => <th key={i} className="px-3 py-2 font-semibold">{h}</th>)}</tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-white/5">
-                                        {preview.slice(1).map((row: any, i: number) => (
-                                            <tr key={i} className="hover:bg-white/5 transition-colors">
-                                                {row.map((c: any, j: number) => <td key={j} className="px-3 py-2 truncate max-w-[120px]">{String(c)}</td>)}
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                            {preview.length > 0 && (
+                                <div className="space-y-2">
+                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Pré-visualização dos dados:</p>
+                                    <div className="rounded-xl border border-white/10 overflow-hidden bg-black/20">
+                                        <table className="w-full text-left border-collapse table-fixed">
+                                            <thead className="bg-white/5">
+                                                <tr>
+                                                    {preview[0]?.map((h: any, i: number) => (
+                                                        <th key={i} className="px-3 py-2 text-[10px] font-black text-slate-400 border-b border-white/5 uppercase">{String(h || "").substring(0, 15)}</th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {preview.slice(1).map((row, i) => (
+                                                    <tr key={i} className="border-b border-white/5">
+                                                        {row.map((cell: any, j: number) => (
+                                                            <td key={j} className="px-3 py-2 text-[10px] text-slate-300 truncate">{String(cell || "")}</td>
+                                                        ))}
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex gap-3 pt-2">
+                                <button
+                                    onClick={handleImport}
+                                    disabled={importing}
+                                    className="flex-1 flex items-center justify-center gap-2 px-8 py-3 rounded-xl bg-[hsl(var(--vallor-purple))] hover:bg-[hsl(var(--vallor-purple-light))] text-white text-sm font-black transition-all shadow-lg shadow-purple-500/10 disabled:opacity-50 active:scale-95"
+                                >
+                                    {importing ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle className="h-5 w-5" />}
+                                    {importing ? "Processando..." : "Confirmar Importação"}
+                                </button>
                             </div>
                         </div>
                     )}
 
-                    <div className="flex gap-3 pt-2">
-                        <button
-                            onClick={onClose}
-                            className="flex-1 h-12 rounded-xl border border-white/10 text-slate-300 font-medium hover:bg-white/5 transition-colors"
-                        >
-                            Cancelar
-                        </button>
-                        <button
-                            onClick={handleImport}
-                            disabled={!file || importing}
-                            className="flex-[2] h-12 rounded-xl bg-primary text-primary-foreground font-bold hover:bg-primary/90 transition-all shadow-[0_0_20px_rgba(var(--primary-rgb),0.3)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                        >
-                            {importing ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
-                            {importing ? "Importando..." : `Importar ${file ? "Contatos" : ""}`}
-                        </button>
+                    <div className="p-4 rounded-xl bg-blue-500/5 border border-blue-500/10">
+                        <p className="text-xs text-blue-300/80 leading-relaxed font-medium">
+                            💡 <strong>Dica:</strong> Certifique-se que o arquivo possui colunas identificáveis como <strong>Nome</strong>, <strong>WhatsApp</strong> e <strong>Email</strong>. O sistema remove duplicados automaticamente pelo número de telefone.
+                        </p>
                     </div>
                 </div>
             </div>

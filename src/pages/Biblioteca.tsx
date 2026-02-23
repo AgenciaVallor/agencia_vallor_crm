@@ -9,9 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { NICHOS } from "@/data/nichos";
 import { cn } from "@/lib/utils";
-import * as XLSX from "xlsx";
-import { toast } from "sonner";
-import ImportModal from "@/components/ImportModal";
+import { ImportModal } from "@/components/ImportModal";
 
 type Lead = {
   id: string;
@@ -632,7 +630,7 @@ export default function BibliotecaPage() {
 
       {/* Import Modal */}
       {importModalOpen && (
-        <ImportModal onClose={() => setImportModalOpen(false)} onComplete={() => { setImportModalOpen(false); loadInitial(); }} />
+        <ImportModal onClose={() => setImportModalOpen(false)} onSuccess={() => { setImportModalOpen(false); loadInitial(); }} />
       )}
     </div>
   );
