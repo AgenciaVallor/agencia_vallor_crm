@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
-import ImportModal from "@/components/ImportModal";
+import { ImportModal } from "@/components/ImportModal";
 
 interface Campaign {
   id: string;
@@ -49,7 +49,7 @@ interface CampaignMessage {
 
 const ESTADOS = ["AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"];
 type WizardStep = 1 | 2 | 3 | 4;
-type Tab = "campanhas" | "conversas" | "agenda";
+type Tab = "campanhas" | "conversas";
 
 interface Agendamento {
   id: string;
@@ -379,7 +379,6 @@ export default function Campanhas() {
         {([
           { id: "campanhas" as Tab, label: "Campanhas", icon: Zap },
           { id: "conversas" as Tab, label: "Conversas Recentes", icon: MessageCircle },
-          { id: "agenda" as Tab, label: "Agenda", icon: Calendar },
         ]).map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={cn("flex items-center gap-1.5 px-4 py-2 rounded-t-lg text-xs font-medium transition-colors border-b-2",
@@ -480,9 +479,6 @@ export default function Campanhas() {
           </div>
         )}
 
-        {tab === "agenda" && (
-          <AgendaTab />
-        )}
       </div>
 
       {/* ── Wizard Modal ── */}
@@ -854,7 +850,7 @@ export default function Campanhas() {
       {importModalOpen && (
         <ImportModal
           onClose={() => setImportModalOpen(false)}
-          onComplete={() => { setImportModalOpen(false); fetchCampaigns(); }}
+          onSuccess={() => { setImportModalOpen(false); fetchCampaigns(); }}
         />
       )}
     </div>
