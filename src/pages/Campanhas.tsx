@@ -351,7 +351,7 @@ export default function Campanhas() {
     <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
       {/* Header */}
       <header className="h-14 flex items-center gap-3 px-4 border-b border-border bg-card shrink-0">
-        <sidebar-trigger className="text-muted-foreground hover:text-foreground" />
+        <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
         <div className="h-5 w-px bg-border" />
         <div className="flex flex-col">
           <h1 className="text-sm font-semibold text-foreground">Campanhas</h1>
@@ -849,6 +849,7 @@ export default function Campanhas() {
             </div>
           </div>
         </div>
+      )}
       {/* ── Import Modal ── */}
       {importModalOpen && (
         <ImportModal
