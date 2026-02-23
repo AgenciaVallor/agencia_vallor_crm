@@ -9,6 +9,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { NICHOS } from "@/data/nichos";
 import { cn } from "@/lib/utils";
+import * as XLSX from "xlsx";
+import { toast } from "sonner";
 
 type Lead = {
   id: string;
@@ -37,22 +39,186 @@ const PAGE_SIZE = 50;
 function getTemperaturaStyle(t: string) {
   switch (t) {
     case "Fervendo": return { color: "text-red-400", bg: "bg-red-500/15 border-red-500/30", emoji: "🔥" };
-    case "Quente":   return { color: "text-orange-400", bg: "bg-orange-500/15 border-orange-500/30", emoji: "♨️" };
-    case "Morno":    return { color: "text-yellow-400", bg: "bg-yellow-500/15 border-yellow-500/30", emoji: "🌡️" };
-    case "Frio":     return { color: "text-blue-400", bg: "bg-blue-500/15 border-blue-500/30", emoji: "❄️" };
-    default:         return { color: "text-slate-400", bg: "bg-slate-500/15 border-slate-500/30", emoji: "💤" };
+    case "Quente": return { color: "text-orange-400", bg: "bg-orange-500/15 border-orange-500/30", emoji: "♨️" };
+    case "Morno": return { color: "text-yellow-400", bg: "bg-yellow-500/15 border-yellow-500/30", emoji: "🌡️" };
+    case "Frio": return { color: "text-blue-400", bg: "bg-blue-500/15 border-blue-500/30", emoji: "❄️" };
+    default: return { color: "text-slate-400", bg: "bg-slate-500/15 border-slate-500/30", emoji: "💤" };
   }
 }
 
 function getStatusStyle(s: string) {
   switch (s) {
-    case "Ganho":      return "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
-    case "Perdido":    return "bg-red-500/15 text-red-400 border-red-500/30";
+    case "Ganho": return "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
+    case "Perdido": return "bg-red-500/15 text-red-400 border-red-500/30";
     case "Negociando": return "bg-purple-500/15 text-purple-400 border-purple-500/30";
-    case "Proposta":   return "bg-amber-500/15 text-amber-400 border-amber-500/30";
-    case "Contato":    return "bg-sky-500/15 text-sky-400 border-sky-500/30";
-    default:           return "bg-slate-500/15 text-slate-300 border-slate-500/30";
+    case "Proposta": return "bg-amber-500/15 text-amber-400 border-amber-500/30";
+    case "Contato": return "bg-sky-500/15 text-sky-400 border-sky-500/30";
+    default: return "bg-slate-500/15 text-slate-300 border-slate-500/30";
   }
+}
+
+// ─── Import Modal ─────────────────────────────────────────────────────────────
+function ImportModal({ onClose, onComplete }: { onClose: () => void; onComplete: () => void }) {
+  const { user } = useAuth();
+  const [file, setFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [preview, setPreview] = useState<any[]>([]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f);
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const bstr = evt.target?.result;
+      const wb = XLSX.read(bstr, { type: "binary" });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      setPreview(data.slice(0, 6)); // Show first 5 rows
+    };
+    reader.readAsBinaryString(f);
+  };
+
+  const handleImport = async () => {
+    if (!file || !user) return;
+    setImporting(true);
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: "binary" });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const rows: any[] = XLSX.utils.sheet_to_json(ws);
+
+        if (rows.length === 0) {
+          toast.error("O arquivo está vazio.");
+          setImporting(false);
+          return;
+        }
+
+        // Map columns
+        const leadsToInsert = rows.map(r => ({
+          user_id: user.id,
+          nome_empresa: r.nome || r.empresa || r.name || r.Nome || "Sem Nome",
+          whatsapp: String(r.whatsapp || r.WhatsApp || r.celular || r.Celular || "").replace(/\D/g, "") || null,
+          email: r.email || r.Email || null,
+          telefone: String(r.telefone || r.Telefone || r.phone || "").replace(/\D/g, "") || null,
+          cidade: r.cidade || r.Cidade || null,
+          estado: r.estado || r.Estado || r.uf || r.UF || null,
+          nicho: r.nicho || r.Nicho || r.categoria || "Importado",
+          fonte: "Importação Excel",
+          status_funil: "Novo",
+          temperatura: "Frio"
+        }));
+
+        // Batch insert
+        const { error } = await supabase.from("leads").insert(leadsToInsert);
+
+        if (error) throw error;
+
+        // Log import
+        await supabase.from("contact_imports").insert({
+          user_id: user.id,
+          filename: file.name,
+          total_rows: leadsToInsert.length,
+          status: "concluido"
+        });
+
+        toast.success(`${leadsToInsert.length} leads importados com sucesso!`);
+        onComplete();
+      };
+      reader.readAsBinaryString(file);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao importar arquivo. Verifique o formato.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
+      <div className="relative w-full max-w-2xl rounded-2xl border border-white/10 bg-[#0f172a] shadow-2xl p-6 space-y-5" onClick={e => e.stopPropagation()}>
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"><X className="h-5 w-5" /></button>
+
+        <div>
+          <h2 className="text-xl font-bold text-white flex items-center gap-2"><Upload className="h-5 w-5 text-purple-400" /> Importar Contatos</h2>
+          <p className="text-sm text-slate-400 mt-1">Suba um arquivo Excel (.xlsx, .xls) ou CSV com seus leads.</p>
+        </div>
+
+        {!file ? (
+          <div className="border-2 border-dashed border-white/10 rounded-xl p-10 text-center hover:border-purple-500/50 transition-colors cursor-pointer group" onClick={() => document.getElementById("fileInput")?.click()}>
+            <input id="fileInput" type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileChange} />
+            <div className="h-12 w-12 rounded-full bg-purple-500/20 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
+              <Upload className="h-6 w-6 text-purple-400" />
+            </div>
+            <p className="text-sm text-slate-300 font-medium">Clique para selecionar ou arraste o arquivo</p>
+            <p className="text-xs text-slate-500 mt-1">Suporta XLSX, XLS e CSV</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                  <Download className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-white">{file.name}</p>
+                  <p className="text-xs text-slate-500">{(file.size / 1024).toFixed(1)} KB</p>
+                </div>
+              </div>
+              <button onClick={() => setFile(null)} className="text-red-400 hover:text-red-300 text-xs font-medium">Remover</button>
+            </div>
+
+            {preview.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-slate-500 uppercase">Preview dos dados:</p>
+                <div className="rounded-lg border border-white/5 overflow-hidden">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-white/5">
+                      <tr>
+                        {preview[0].map((h: any, i: number) => (
+                          <th key={i} className="px-3 py-2 text-[10px] font-bold text-slate-400 border-b border-white/5">{String(h || "")}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preview.slice(1).map((row, i) => (
+                        <tr key={i} className="border-b border-white/5">
+                          {row.map((cell: any, j: number) => (
+                            <td key={j} className="px-3 py-1.5 text-[10px] text-slate-300 truncate max-w-[100px]">{String(cell || "")}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setFile(null)} className="flex-1 px-4 py-2.5 rounded-lg border border-white/10 text-slate-300 text-sm hover:bg-white/5 transition-colors">Trocar arquivo</button>
+              <button onClick={handleImport} disabled={importing}
+                className="flex-3 flex items-center justify-center gap-2 px-8 py-2.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-bold transition-all card-glow-purple disabled:opacity-50">
+                {importing ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle className="h-5 w-5" />}
+                {importing ? "Importando..." : "Confirmar Importação"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+          <p className="text-[11px] text-blue-300 leading-relaxed">
+            💡 <strong>Dica:</strong> Certifique-se que o arquivo tem colunas como: <em>nome, whatsapp, email, cidade, nicho</em>. O sistema tentará mapear automaticamente.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── Edit Modal ────────────────────────────────────────────────────────────────
@@ -342,6 +508,7 @@ export default function BibliotecaPage() {
   const [nichoOpen, setNichoOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [nichosFromLeads, setNichosFromLeads] = useState<string[]>([]);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
@@ -452,7 +619,7 @@ export default function BibliotecaPage() {
         <div className="h-5 w-px bg-border" />
         <h1 className="text-sm font-semibold text-foreground leading-tight">Biblioteca</h1>
         <div className="ml-auto flex items-center gap-2">
-          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium transition-colors">
+          <button onClick={() => setImportModalOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium transition-colors">
             <Upload className="h-3.5 w-3.5" /> Importar
           </button>
           <button onClick={exportCSV} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground text-xs font-medium border border-border transition-colors">
@@ -623,6 +790,11 @@ export default function BibliotecaPage() {
       {/* Edit modal */}
       {editingLead && (
         <EditModal lead={editingLead} onClose={() => setEditingLead(null)} onSave={handleSaveEdit} />
+      )}
+
+      {/* Import Modal */}
+      {importModalOpen && (
+        <ImportModal onClose={() => setImportModalOpen(false)} onComplete={() => { setImportModalOpen(false); loadInitial(); }} />
       )}
     </div>
   );

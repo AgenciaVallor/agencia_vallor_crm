@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Bot, Plus, X, Save, Zap, MessageSquare, Target, Brain, ChevronDown } from "lucide-react";
+import { Bot, Plus, X, Save, Zap, MessageSquare, Target, Brain, ChevronDown, CalendarCheck, ExternalLink } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Slider } from "@/components/ui/slider";
@@ -20,6 +20,8 @@ interface AgenteConfig {
   argumentos: string[];
   system_prompt: string;
   modo: "ativo" | "receptivo";
+  calendly_token: string;
+  calendly_event_type_uri: string;
 }
 
 const DEFAULT_CONFIG: AgenteConfig = {
@@ -33,6 +35,8 @@ const DEFAULT_CONFIG: AgenteConfig = {
   argumentos: [],
   system_prompt: "",
   modo: "ativo",
+  calendly_token: "",
+  calendly_event_type_uri: "",
 };
 
 function buildSystemPrompt(config: AgenteConfig): string {
@@ -104,7 +108,9 @@ export default function AgenteIAPage() {
           objecoes: data.objecoes || [],
           argumentos: data.argumentos || [],
           system_prompt: data.system_prompt,
-          modo: "ativo",
+          modo: data.modo || "ativo",
+          calendly_token: (data as any).calendly_token || "",
+          calendly_event_type_uri: (data as any).calendly_event_type_uri || "",
         });
       }
     } catch (err) {
@@ -218,11 +224,10 @@ export default function AgenteIAPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
               onClick={() => setConfig(p => ({ ...p, modo: "ativo" }))}
-              className={`p-4 rounded-xl border text-left transition-all ${
-                config.modo === "ativo"
+              className={`p-4 rounded-xl border text-left transition-all ${config.modo === "ativo"
                   ? "border-primary bg-primary/10"
                   : "border-border bg-secondary/30 hover:border-primary/40"
-              }`}
+                }`}
             >
               <p className="text-sm font-bold text-foreground mb-1">🚀 Modo Ativo</p>
               <p className="text-xs text-muted-foreground leading-relaxed">
@@ -231,22 +236,21 @@ export default function AgenteIAPage() {
             </button>
             <button
               onClick={() => setConfig(p => ({ ...p, modo: "receptivo" }))}
-              className={`p-4 rounded-xl border text-left transition-all ${
-                config.modo === "receptivo"
+              className={`p-4 rounded-xl border text-left transition-all ${config.modo === "receptivo"
                   ? "border-primary bg-primary/10"
                   : "border-border bg-secondary/30 hover:border-primary/40"
-              }`}
+                }`}
             >
               <p className="text-sm font-bold text-foreground mb-1">🎯 Modo Receptivo (SDR)</p>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Responde leads com técnicas <strong className="text-foreground">BRAT + SPIN SELLING</strong>. Qualifica → agenda reunião via Google Agenda.
+                Responde leads com técnicas <strong className="text-foreground">BRAT + SPIN SELLING</strong>. Qualifica → consulta horários no Calendly → agenda reunião.
               </p>
             </button>
           </div>
           {config.modo === "receptivo" && (
             <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
               <p className="text-xs text-muted-foreground">
-                📅 O agente pedirá o e-mail do lead → verificará horários (9h-18h seg-sex) → criará evento no Google Agenda → confirmará no WhatsApp.
+                📅 O agente pergunta e-mail e nome → consulta horários reais no Calendly → sugere 3–5 opções → lead escolhe → agendamento criado e confirmação enviada no WhatsApp.
               </p>
             </div>
           )}
@@ -286,11 +290,10 @@ export default function AgenteIAPage() {
                   <button
                     key={estilo}
                     onClick={() => setConfig((p) => ({ ...p, estilo }))}
-                    className={`flex-1 h-10 rounded-lg border text-sm font-medium transition-all ${
-                      config.estilo === estilo
+                    className={`flex-1 h-10 rounded-lg border text-sm font-medium transition-all ${config.estilo === estilo
                         ? "border-primary bg-primary/20 text-primary"
                         : "border-border bg-secondary/30 text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                    }`}
+                      }`}
                   >
                     {estilo === "Humano" ? "👤 Humano" : "🤖 IA"}
                   </button>
@@ -489,6 +492,60 @@ export default function AgenteIAPage() {
                 ))}
               </div>
             )}
+          </div>
+        </section>
+
+        {/* ── SEÇÃO CALENDLY ── */}
+        <section className="rounded-xl border border-border bg-card card-glow-blue p-5 space-y-4">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="h-7 w-7 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center">
+              <CalendarCheck className="h-4 w-4 text-primary" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-foreground text-sm">Integração Calendly</h2>
+              <p className="text-xs text-muted-foreground">Necessário para agendamento automático no modo Receptivo</p>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Personal Access Token
+            </label>
+            <input
+              type="password"
+              value={config.calendly_token}
+              onChange={(e) => setConfig((p) => ({ ...p, calendly_token: e.target.value }))}
+              placeholder="Insira seu Calendly PAT..."
+              className="w-full h-10 rounded-lg border border-border bg-input px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition"
+            />
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              Obtenha em{" "}
+              <a
+                href="https://developer.calendly.com/personal-access-tokens"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary underline underline-offset-2 flex items-center gap-0.5"
+              >
+                developer.calendly.com/personal-access-tokens
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Event Type URI
+            </label>
+            <input
+              type="text"
+              value={config.calendly_event_type_uri}
+              onChange={(e) => setConfig((p) => ({ ...p, calendly_event_type_uri: e.target.value }))}
+              placeholder="Ex: https://api.calendly.com/event_types/ABC123"
+              className="w-full h-10 rounded-lg border border-border bg-input px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition"
+            />
+            <p className="text-xs text-muted-foreground">
+              No Calendly dashboard → Event Types → ⋮ → Copy API URI
+            </p>
           </div>
         </section>
 

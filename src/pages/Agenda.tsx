@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Calendar, Clock, Mail, User, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { Calendar, Clock, Mail, User, CheckCircle, XCircle, Loader2, ExternalLink } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useToast } from "@/hooks/use-toast";
@@ -11,9 +11,11 @@ interface Agendamento {
   lead_id: string | null;
   data_hora: string;
   email_lead: string;
+  nome_lead: string | null;
   titulo: string;
   descricao: string | null;
-  google_event_id: string | null;
+  calendly_event_uuid: string | null;
+  meeting_link: string | null;
   status: string;
   created_at: string;
   leads?: { nome_empresa: string; nicho: string } | null;
@@ -89,8 +91,8 @@ export default function AgendaPage() {
         {agendamentos.length === 0 ? (
           <div className="text-center py-16 space-y-3">
             <Calendar className="h-12 w-12 text-muted-foreground mx-auto" />
-            <p className="text-muted-foreground">Nenhuma reunião agendada ainda.</p>
-            <p className="text-xs text-muted-foreground">Quando o Agente IA agendar reuniões, elas aparecerão aqui.</p>
+            <p className="text-muted-foreground font-medium">Sua agenda está vazia.</p>
+            <p className="text-xs text-muted-foreground">Quando o agente agendar reuniões, elas aparecerão aqui.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -120,7 +122,25 @@ export default function AgendaPage() {
                     <Mail className="h-3 w-3" />
                     {ag.email_lead}
                   </span>
+                  {ag.nome_lead && (
+                    <span className="flex items-center gap-1">
+                      <User className="h-3 w-3" />
+                      {ag.nome_lead}
+                    </span>
+                  )}
                 </div>
+
+                {ag.meeting_link && (
+                  <a
+                    href={ag.meeting_link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 transition w-fit"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    Ver no Calendly
+                  </a>
+                )}
 
                 {ag.descricao && (
                   <p className="text-xs text-muted-foreground bg-secondary/30 rounded-lg p-2">{ag.descricao}</p>
