@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
-import { Bot, Plus, X, Save, Zap, MessageSquare, Target, Brain, ChevronDown, CalendarCheck, ExternalLink } from "lucide-react";
+import { Bot, Plus, X, Save, Zap, MessageSquare, Target, Brain, ChevronDown, CalendarCheck, ExternalLink, Smartphone } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { cn } from "@/lib/utils";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
@@ -65,7 +67,31 @@ export default function AgenteIAPage() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [promptPreview, setPromptPreview] = useState(false);
+  const { user } = useAuth();
   const { toast } = useToast();
+
+  const [whatsappStats, setWhatsappStats] = useState({ connected: 0, total: 10 });
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchStats = async () => {
+      const { data } = await supabase.from("whatsapp_accounts").select("status").eq("user_id", user.id);
+      if (data) {
+        setWhatsappStats({
+          connected: data.filter(d => d.status === "conectado").length,
+          total: 10
+        });
+      }
+    };
+    fetchStats();
+
+    // Subscribe to changes
+    const channel = supabase.channel('whatsapp_stats_ia').on('postgres_changes', {
+      event: '*', schema: 'public', table: 'whatsapp_accounts', filter: `user_id=eq.${user.id}`
+    }, fetchStats).subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   useEffect(() => {
     loadConfig();
@@ -195,16 +221,14 @@ export default function AgenteIAPage() {
   return (
     <div className="flex flex-col min-h-screen bg-background">
       {/* Header */}
-      <header className="flex items-center gap-3 px-6 py-4 border-b border-border bg-card">
+      <header className="h-14 flex items-center gap-3 px-6 border-b border-border bg-card shrink-0">
         <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/20 border border-primary/30">
-            <Bot className="h-4 w-4 text-primary" />
-          </div>
-          <div>
-            <h1 className="font-bold text-foreground text-sm leading-tight">Configuração do Agente IA</h1>
-            <p className="text-xs text-muted-foreground">Personalize o comportamento do seu agente de vendas</p>
-          </div>
+        <div className="h-5 w-px bg-border" />
+        <div className="flex flex-col">
+          <h1 className="text-sm font-semibold text-foreground">Configuração do Agente IA</h1>
+          <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+            <Smartphone className="h-2.5 w-2.5" /> Seus WhatsApps conectados: <span className={cn("font-bold", whatsappStats.connected > 0 ? "text-green-500" : "text-red-500")}>{whatsappStats.connected}/10</span>
+          </p>
         </div>
       </header>
 
@@ -225,8 +249,8 @@ export default function AgenteIAPage() {
             <button
               onClick={() => setConfig(p => ({ ...p, modo: "ativo" }))}
               className={`p-4 rounded-xl border text-left transition-all ${config.modo === "ativo"
-                  ? "border-primary bg-primary/10"
-                  : "border-border bg-secondary/30 hover:border-primary/40"
+                ? "border-primary bg-primary/10"
+                : "border-border bg-secondary/30 hover:border-primary/40"
                 }`}
             >
               <p className="text-sm font-bold text-foreground mb-1">🚀 Modo Ativo</p>
@@ -237,8 +261,8 @@ export default function AgenteIAPage() {
             <button
               onClick={() => setConfig(p => ({ ...p, modo: "receptivo" }))}
               className={`p-4 rounded-xl border text-left transition-all ${config.modo === "receptivo"
-                  ? "border-primary bg-primary/10"
-                  : "border-border bg-secondary/30 hover:border-primary/40"
+                ? "border-primary bg-primary/10"
+                : "border-border bg-secondary/30 hover:border-primary/40"
                 }`}
             >
               <p className="text-sm font-bold text-foreground mb-1">🎯 Modo Receptivo (SDR)</p>
@@ -291,8 +315,8 @@ export default function AgenteIAPage() {
                     key={estilo}
                     onClick={() => setConfig((p) => ({ ...p, estilo }))}
                     className={`flex-1 h-10 rounded-lg border text-sm font-medium transition-all ${config.estilo === estilo
-                        ? "border-primary bg-primary/20 text-primary"
-                        : "border-border bg-secondary/30 text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                      ? "border-primary bg-primary/20 text-primary"
+                      : "border-border bg-secondary/30 text-muted-foreground hover:border-primary/50 hover:text-foreground"
                       }`}
                   >
                     {estilo === "Humano" ? "👤 Humano" : "🤖 IA"}

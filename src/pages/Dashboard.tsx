@@ -100,34 +100,35 @@ export default function DashboardPage() {
 
     const cidadeAlvo = sortear ? randomCidade(estadoSigla) : cidade;
 
-    // ── Duplicate check: verify if this search was already done ──
+    // ── Prevenção de busca duplicada ──
     addLog(`🔎 Verificando buscas anteriores para "${nicho}" em ${cidadeAlvo}-${estadoSigla}...`, "info");
     try {
-      const { count: existingCount } = await supabase
+      const { count } = await supabase
         .from("leads")
         .select("id", { count: "exact", head: true })
         .eq("user_id", user?.id)
-        .ilike("nicho", nicho)
-        .ilike("cidade", cidadeAlvo)
-        .eq("estado", estadoSigla);
+        .ilike("nicho", `%${nicho}%`)
+        .eq("cidade", cidadeAlvo)
+        .eq("estado", estadoSigla)
+        .limit(1);
 
-      if (existingCount && existingCount > 0) {
-        addLog(`⚠️ Busca já realizada anteriormente. ${existingCount} leads similares encontrados.`, "warn");
+      if (count && count > 0) {
+        addLog(`⚠️ Busca já realizada para este nicho em ${cidadeAlvo}-${estadoSigla}. Veja na Biblioteca.`, "warn");
         toast({
           title: "Busca duplicada",
-          description: `Busca já realizada anteriormente para este nicho em ${cidadeAlvo}-${estadoSigla}. Existem ${existingCount} leads similares na Biblioteca.`,
+          description: `Busca já realizada para este nicho em ${cidadeAlvo}-${estadoSigla}. Veja os leads na Biblioteca.`,
           variant: "destructive",
         });
         setCapturing(false);
         return;
       }
       addLog(`✅ Nenhuma busca anterior encontrada. Prosseguindo...`, "success");
-    } catch {
-      addLog(`⚠️ Não foi possível verificar duplicatas. Prosseguindo...`, "warn");
+    } catch (e) {
+      console.error("Erro ao verificar duplicatas:", e);
     }
 
-    addLog(`🔍 Iniciando busca no Google Maps (todas as páginas)...`, "info");
-    addLog(`📍 Buscando "${nicho}" em ${cidadeAlvo} - ${estadoSigla}...`, "info");
+    addLog(`Iniciando busca básica para ${nicho} em ${cidadeAlvo}-${estadoSigla}...`, "info");
+    addLog(`Buscando no Google Maps (todas as páginas)...`, "info");
 
     try {
       const { data, error } = await supabase.functions.invoke('google-maps-search', {

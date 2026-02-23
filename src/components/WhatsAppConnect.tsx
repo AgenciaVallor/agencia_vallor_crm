@@ -9,6 +9,7 @@ interface WhatsAppAccount {
   token: string | null;
   numero: string | null;
   status: string;
+  modo_operacao: 'ativo' | 'receptivo';
   connected_at: string | null;
 }
 
@@ -27,7 +28,7 @@ export default function WhatsAppConnect() {
   const { toast } = useToast();
 
   const connectedCount = accounts.filter((a) => a.status === "conectado").length;
-  const LIMIT = 2;
+  const LIMIT = 10;
 
   useEffect(() => {
     loadAccounts();
@@ -193,10 +194,17 @@ export default function WhatsAppConnect() {
     } catch (err) { console.error("Disconnect error:", err); }
   }
 
-  function closeModal() { setShowQrModal(false); setQrImage(null); stopPolling(); stopCountdown(); }
+  async function updateModo(accountId: string, modo: 'ativo' | 'receptivo') {
+    try {
+      await supabase.from("whatsapp_accounts").update({ modo_operacao: modo }).eq("id", accountId);
+      setAccounts(prev => prev.map(a => a.id === accountId ? { ...a, modo_operacao: modo } : a));
+      if (selectedAccount?.id === accountId) setSelectedAccount(prev => prev ? { ...prev, modo_operacao: modo } : null);
+      toast({ title: "Modo atualizado", description: `WhatsApp agora está em modo ${modo === 'ativo' ? 'Ativo' : 'Receptivo'}.` });
+    } catch (err) { console.error("Update modo error:", err); }
+  }
 
   const dotColor = (status: string) =>
-    status === "conectado" ? "bg-green-500" : status === "aguardando" ? "bg-yellow-500 animate-pulse" : "bg-red-500";
+    status === "conectado" ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]" : status === "aguardando" ? "bg-yellow-500 animate-pulse" : "bg-red-500";
 
   const statusLabel = (status: string) =>
     status === "conectado" ? "Conectado" : status === "aguardando" ? "Aguardando QR" : "Desconectado";
@@ -235,11 +243,10 @@ export default function WhatsAppConnect() {
                 <button
                   key={acc.id}
                   onClick={() => setSelectedAccount(acc)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-full border transition-all shrink-0 ${
-                    isSelected
-                      ? "border-primary bg-primary/10"
-                      : "border-border bg-secondary/40 hover:border-primary/40"
-                  }`}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-full border transition-all shrink-0 ${isSelected
+                    ? "border-primary bg-primary/10"
+                    : "border-border bg-secondary/40 hover:border-primary/40"
+                    }`}
                 >
                   <div className="relative">
                     <div className="h-7 w-7 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center text-[10px] font-bold text-primary">
@@ -253,8 +260,8 @@ export default function WhatsAppConnect() {
                       {acc.status === "conectado" && acc.numero
                         ? acc.numero
                         : acc.status === "aguardando"
-                        ? "Aguardando QR"
-                        : "Desconectado"}
+                          ? "Aguardando QR"
+                          : "Desconectado"}
                     </p>
                   </div>
                   {i > 0 && (
@@ -293,48 +300,80 @@ export default function WhatsAppConnect() {
 
         {/* Selected account detail bar */}
         {selectedAccount && (
-          <div className="flex items-center gap-3 pt-2 border-t border-border">
-            <div className="h-9 w-9 rounded-full bg-secondary border border-border flex items-center justify-center">
-              <Smartphone className="h-4 w-4 text-muted-foreground" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-foreground">Agente IA</p>
-              <p className="text-xs text-muted-foreground">Agente IA</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {selectedAccount.status === "conectado" ? (
-                <>
-                  <span className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-green-500/10 text-green-500 border border-green-500/30">
-                    <Wifi className="h-3 w-3" /> Conectado
-                  </span>
+          <div className="pt-2 border-t border-border space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-full bg-secondary border border-border flex items-center justify-center">
+                <Smartphone className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-foreground">
+                  {selectedAccount.numero || "WhatsApp sem número"}
+                </p>
+                <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                  <span className={`h-1.5 w-1.5 rounded-full ${dotColor(selectedAccount.status)}`} />
+                  {statusLabel(selectedAccount.status)}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {selectedAccount.status === "conectado" ? (
                   <button
                     onClick={() => handleDisconnect(selectedAccount.id)}
                     className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive border border-destructive/30 hover:bg-destructive/20 transition"
                   >
                     <WifiOff className="h-3 w-3" /> Desconectar
                   </button>
-                </>
-              ) : selectedAccount.status === "aguardando" ? (
-                <span className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-yellow-500/10 text-yellow-500 border border-yellow-500/30 animate-pulse">
-                  Aguardando QR...
-                </span>
-              ) : (
-                <button
-                  onClick={handleConnect}
-                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 transition"
-                >
-                  <QrCode className="h-3 w-3" /> Conectar
-                </button>
-              )}
+                ) : selectedAccount.status === "aguardando" ? (
+                  <span className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-yellow-500/10 text-yellow-500 border border-yellow-500/30 animate-pulse">
+                    Aguardando QR...
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => { setActiveAccountId(selectedAccount.id); setShowQrModal(true); fetchQrCode(selectedAccount.id); }}
+                    className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 transition"
+                  >
+                    <QrCode className="h-3 w-3" /> Conectar
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* Mode Selection */}
+            {selectedAccount.status === "conectado" && (
+              <div className="bg-secondary/30 rounded-xl p-3 space-y-2 border border-border/50">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground">Modo de Operação</span>
+                  <div className="flex bg-card rounded-lg p-1 border border-border gap-1">
+                    <button
+                      onClick={() => updateModo(selectedAccount.id, 'ativo')}
+                      className={cn("px-3 py-1 rounded text-[10px] font-bold transition-all",
+                        selectedAccount.modo_operacao === 'ativo' ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}
+                    >
+                      🚀 ATIVO
+                    </button>
+                    <button
+                      onClick={() => updateModo(selectedAccount.id, 'receptivo')}
+                      className={cn("px-3 py-1 rounded text-[10px] font-bold transition-all",
+                        selectedAccount.modo_operacao === 'receptivo' ? "bg-indigo-500 text-white shadow-[0_0_10px_rgba(99,102,241,0.3)]" : "text-muted-foreground hover:text-foreground")}
+                    >
+                      🎯 RECEPTIVO
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground leading-relaxed italic">
+                  {selectedAccount.modo_operacao === 'ativo'
+                    ? "🚀 Envia disparos. NÃO responde mensagens orgânicas."
+                    : "🎯 SDR IA: Responde com técnicas BRAT + SPIN SELLING e agenda reuniões."}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </section>
 
       {/* QR Modal */}
       {showQrModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="relative w-full max-w-sm mx-4 rounded-2xl border border-border bg-card p-6 space-y-5 shadow-2xl">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md">
+          <div className="relative w-full max-w-sm mx-4 rounded-2xl border border-white/10 bg-[#1a1c2e] p-8 space-y-6 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
             <button onClick={closeModal} className="absolute top-3 right-3 text-muted-foreground hover:text-foreground transition">
               <X className="h-5 w-5" />
             </button>

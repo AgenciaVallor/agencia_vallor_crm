@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
+import ImportModal from "@/components/ImportModal";
 
 interface Campaign {
   id: string;
@@ -46,7 +47,7 @@ interface CampaignMessage {
 }
 
 
-const ESTADOS = ["AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG","MS","MT","PA","PB","PE","PI","PR","RJ","RN","RO","RR","RS","SC","SE","SP","TO"];
+const ESTADOS = ["AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"];
 type WizardStep = 1 | 2 | 3 | 4;
 type Tab = "campanhas" | "conversas" | "agenda";
 
@@ -152,7 +153,7 @@ export default function Campanhas() {
   const [wizardStep, setWizardStep] = useState<WizardStep>(1);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [activeCampaignMessages, setActiveCampaignMessages] = useState<CampaignMessage[]>([]);
-  
+
 
   // Wizard form
   const [form, setForm] = useState({
@@ -181,6 +182,32 @@ export default function Campanhas() {
   const [anexosUrls, setAnexosUrls] = useState<string[]>([]);
   const [nichosFromDb, setNichosFromDb] = useState<string[]>([]);
   const [filterEmailOnly, setFilterEmailOnly] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+
+  // WhatsApp stats
+  const [whatsappStats, setWhatsappStats] = useState({ connected: 0, total: 10 });
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchStats = async () => {
+      const { data } = await supabase.from("whatsapp_accounts").select("status").eq("user_id", user.id);
+      if (data) {
+        setWhatsappStats({
+          connected: data.filter(d => d.status === "conectado").length,
+          total: 10
+        });
+      }
+    };
+    fetchStats();
+
+    // Subscribe to changes
+    const channel = supabase.channel('whatsapp_stats').on('postgres_changes', {
+      event: '*', schema: 'public', table: 'whatsapp_accounts', filter: `user_id=eq.${user.id}`
+    }, fetchStats).subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
+
   useEffect(() => { fetchCampaigns(); }, []);
 
 
@@ -318,16 +345,24 @@ export default function Campanhas() {
     concluida: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   }[s] ?? "bg-secondary text-muted-foreground border-border");
 
-  
+
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
       {/* Header */}
       <header className="h-14 flex items-center gap-3 px-4 border-b border-border bg-card shrink-0">
-        <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
+        <sidebar-trigger className="text-muted-foreground hover:text-foreground" />
         <div className="h-5 w-px bg-border" />
-        <h1 className="text-sm font-semibold text-foreground">Campanhas</h1>
-        <div className="ml-auto">
+        <div className="flex flex-col">
+          <h1 className="text-sm font-semibold text-foreground">Campanhas</h1>
+          <p className="text-[10px] text-muted-foreground">
+            Seus WhatsApps conectados: <span className={cn("font-bold", whatsappStats.connected > 0 ? "text-green-500" : "text-red-500")}>{whatsappStats.connected}/10</span>
+          </p>
+        </div>
+        <div className="ml-auto flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => setImportModalOpen(true)} className="gap-2 border-border hover:bg-secondary">
+            <Upload className="h-4 w-4" /> Importar Excel/CSV
+          </Button>
           <Button size="sm" onClick={() => setWizardOpen(true)} className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90">
             <Plus className="h-4 w-4" /> Nova Campanha
           </Button>
@@ -456,7 +491,7 @@ export default function Campanhas() {
           <div className="bg-card border border-border rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
             {/* Steps indicator */}
             <div className="flex items-center px-6 pt-5 pb-3 gap-2">
-              {[1,2,3,4].map(s => (
+              {[1, 2, 3, 4].map(s => (
                 <div key={s} className="flex items-center gap-2 flex-1">
                   <div className={cn("h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold border transition-colors",
                     wizardStep >= s ? "bg-primary text-primary-foreground border-primary" : "bg-secondary text-muted-foreground border-border")}>
@@ -523,7 +558,7 @@ export default function Campanhas() {
                       <select value={form.status_filtro} onChange={e => setForm(f => ({ ...f, status_filtro: e.target.value }))}
                         className="w-full h-10 rounded-md border border-border bg-secondary px-3 text-sm text-foreground">
                         <option value="">Todos</option>
-                        {["Novo","Contato","Negociando","Proposta","Ganho","Perdido"].map(s => <option key={s} value={s}>{s}</option>)}
+                        {["Novo", "Contato", "Negociando", "Proposta", "Ganho", "Perdido"].map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
                     <div>
@@ -814,6 +849,12 @@ export default function Campanhas() {
             </div>
           </div>
         </div>
+      {/* ── Import Modal ── */}
+      {importModalOpen && (
+        <ImportModal
+          onClose={() => setImportModalOpen(false)}
+          onComplete={() => { setImportModalOpen(false); fetchCampaigns(); }}
+        />
       )}
     </div>
   );
